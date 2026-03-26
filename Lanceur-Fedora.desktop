@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Installer FreeSmartSync Beta
+GenericName=Installation FreeSmartSync
+Comment=Installe FreeSmartSync Beta sur votre ordinateur
+Exec=bash -c "cd $(dirname %k) && bash CLIC-DROIT-Executer-pour-installer-FreeSmartSync.sh"
+Icon=system-software-install
+Terminal=false
+Categories=System;
+StartupNotify=true
