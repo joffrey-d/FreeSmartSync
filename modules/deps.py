@@ -9,7 +9,8 @@ import shutil
 def detect_distrib():
     """
     Détecte la distribution Linux via /etc/os-release.
-    Retourne (nom_distrib, gestionnaire_paquets, commande_install)
+    Retourne (nom_distrib, gestionnaire_paquets, commande_install, use_su)
+    use_su=True → utiliser 'su -c' au lieu de 'sudo' (ex: Mageia)
     """
     os_release = {}
     try:
@@ -22,39 +23,68 @@ def detect_distrib():
     except Exception:
         pass
 
-    distrib_id = os_release.get("ID", "").lower()
-    distrib_id_like = os_release.get("ID_LIKE", "").lower()
-    distrib_name = os_release.get("NAME", "Linux inconnue")
+    did      = os_release.get("ID", "").lower()
+    did_like = os_release.get("ID_LIKE", "").lower()
+    dname    = os_release.get("PRETTY_NAME", os_release.get("NAME", "Linux"))
 
-    # Détection gestionnaire de paquets
-    if distrib_id in ("ubuntu", "debian", "linuxmint", "pop") or "debian" in distrib_id_like:
-        return distrib_name, "apt", "sudo apt install -y android-tools-adb python3-pyqt5"
-    elif distrib_id in ("fedora", "rhel", "centos", "rocky", "almalinux") or "fedora" in distrib_id_like:
-        return distrib_name, "dnf", "sudo dnf install -y android-tools python3-qt5"
-    elif distrib_id in ("arch", "manjaro", "endeavouros") or "arch" in distrib_id_like:
-        return distrib_name, "pacman", "sudo pacman -S --noconfirm android-tools python-pyqt5"
-    elif distrib_id in ("opensuse", "suse", "opensuse-leap", "opensuse-tumbleweed") or "suse" in distrib_id_like:
-        return distrib_name, "zypper", "sudo zypper install -y android-tools python3-qt5"
-    elif distrib_id in ("mageia",) or "mageia" in distrib_id_like:
-        return distrib_name, "urpmi", "sudo urpmi android-tools python3-pyqt5"
-    elif distrib_id in ("nixos",) or "nixos" in distrib_id_like:
-        return distrib_name, "nix", "nix-env -iA nixpkgs.android-tools nixpkgs.python3 nixpkgs.python3Packages.pyqt5"
+    # ── Debian / Ubuntu / Mint / Zorin / Pop / GLF-OS si base Ubuntu ──
+    if did in ("ubuntu", "debian", "linuxmint", "pop", "zorin",
+               "elementary", "kali", "parrot") \
+            or "debian" in did_like or "ubuntu" in did_like:
+        return dname, "apt", "apt install -y android-tools-adb python3-pyqt5", False
+
+    # ── Fedora / RHEL / CentOS / Nobara ──
+    elif did in ("fedora", "rhel", "centos", "rocky", "almalinux",
+                 "nobara", "ultramarine") \
+            or "fedora" in did_like or "rhel" in did_like:
+        return dname, "dnf", "dnf install -y android-tools python3-qt5", False
+
+    # ── Arch / Manjaro / EndeavourOS ──
+    elif did in ("arch", "manjaro", "endeavouros", "artix", "garuda") \
+            or "arch" in did_like:
+        return dname, "pacman", "pacman -S --noconfirm android-tools python-pyqt5", False
+
+    # ── openSUSE ──
+    elif did in ("opensuse", "suse", "opensuse-leap", "opensuse-tumbleweed") \
+            or "suse" in did_like:
+        return dname, "zypper", "zypper install -y android-tools python3-qt5", False
+
+    # ── Mageia / OpenMandriva ──
+    # Sur Mageia, sudo peut ne pas être configuré → utiliser su -c
+    elif did in ("mageia", "openmandriva") or "mageia" in did_like:
+        return dname, "urpmi", "urpmi --auto android-tools python3-pyqt5", True
+
+    # ── GLF-OS / NixOS ──
+    elif did in ("nixos", "glf-os") or "nix" in did_like or "glf" in did:
+        return dname, "nix", "nix-env -iA nixpkgs.android-tools nixpkgs.python3Packages.pyqt5", False
+
+    # ── Inconnu → essai automatique par binaire présent ──
     else:
-        return distrib_name, "unknown", ""
+        if shutil.which("apt-get"):
+            return dname, "apt", "apt install -y android-tools-adb python3-pyqt5", False
+        elif shutil.which("dnf"):
+            return dname, "dnf", "dnf install -y android-tools python3-qt5", False
+        elif shutil.which("pacman"):
+            return dname, "pacman", "pacman -S --noconfirm android-tools python-pyqt5", False
+        elif shutil.which("zypper"):
+            return dname, "zypper", "zypper install -y android-tools python3-qt5", False
+        elif shutil.which("urpmi"):
+            return dname, "urpmi", "urpmi --auto android-tools python3-pyqt5", True
+        elif shutil.which("nix-env"):
+            return dname, "nix", "nix-env -iA nixpkgs.android-tools nixpkgs.python3Packages.pyqt5", False
+        else:
+            return dname, "unknown", "", False
 
 
 def check_adb():
-    """Vérifie si ADB est installé."""
     return shutil.which("adb") is not None
 
 
 def check_python3():
-    """Vérifie si Python3 est installé."""
     return shutil.which("python3") is not None
 
 
 def check_pyqt5():
-    """Vérifie si PyQt5 est installé."""
     try:
         import PyQt5
         return True
@@ -63,7 +93,6 @@ def check_pyqt5():
 
 
 def get_deps_status():
-    """Retourne le statut de toutes les dépendances."""
     return {
         "adb":    check_adb(),
         "python": check_python3(),
@@ -72,43 +101,72 @@ def get_deps_status():
 
 
 def all_deps_ok():
-    """Retourne True si toutes les dépendances sont présentes."""
-    status = get_deps_status()
-    return all(status.values())
+    return all(get_deps_status().values())
 
 
-def install_deps(distrib_name, pkg_manager, install_cmd, password=None):
+def install_deps(distrib_name, pkg_manager, install_cmd,
+                 use_su=False, password=None):
     """
-    Lance l'installation des dépendances manquantes.
+    Lance l'installation des dépendances.
+    - use_su=True : utilise 'su -c' (Mageia) au lieu de 'sudo'
+    - password    : mot de passe root/sudo si fourni
     Retourne (success, output)
     """
     if not install_cmd:
-        return False, "Gestionnaire de paquets non supporté."
+        return False, (
+            "Gestionnaire de paquets non reconnu.\n"
+            "Installez manuellement :\n"
+            "  • ADB  : android-tools ou android-tools-adb\n"
+            "  • PyQt5 : python3-pyqt5 ou python-pyqt5"
+        )
 
     try:
-        if password:
-            # Utilise sudo avec mot de passe via stdin
+        if use_su and password:
+            # Mageia : su -c "commande" root
             proc = subprocess.run(
-                ["sudo", "-S"] + install_cmd.replace("sudo ", "").split(),
+                ["su", "-c", install_cmd, "root"],
                 input=password + "\n",
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=120
+                timeout=180
             )
-        else:
+        elif password:
+            # sudo avec mot de passe via stdin
+            cmd_parts = install_cmd.split()
             proc = subprocess.run(
-                install_cmd.split(),
+                ["sudo", "-S"] + cmd_parts,
+                input=password + "\n",
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=120
+                timeout=180
             )
+        elif use_su:
+            # su sans mot de passe (rare mais possible)
+            proc = subprocess.run(
+                ["su", "-c", install_cmd, "root"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=180
+            )
+        else:
+            # sudo sans mot de passe (NOPASSWD ou déjà auth)
+            proc = subprocess.run(
+                ["sudo"] + install_cmd.split(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=180
+            )
+
         if proc.returncode == 0:
             return True, proc.stdout
         else:
-            return False, proc.stderr
+            return False, proc.stderr or proc.stdout
+
     except subprocess.TimeoutExpired:
-        return False, "Timeout — installation trop longue."
+        return False, "Timeout — vérifiez votre connexion internet."
     except Exception as e:
         return False, str(e)

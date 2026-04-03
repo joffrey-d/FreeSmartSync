@@ -1,12 +1,12 @@
 #!/bin/bash
 # Installer-FreeSmartSync.sh
-# Installation graphique FreeSmartSync Beta — double-clic et c'est parti !
+# Installation graphique FreeSmartSync — double-clic et c'est parti !
 # Aucun terminal nécessaire.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.local/share/freesmartsync"
 DESKTOP_FILE="$HOME/.local/share/applications/freesmartsync.desktop"
-APP_NAME="FreeSmartSync Beta"
+APP_NAME="FreeSmartSync"
 
 # ─────────────────────────────────────────────
 # Détection outil graphique disponible
@@ -191,19 +191,19 @@ if [ -d "$INSTALL_DIR" ] || [ -f "$DESKTOP_FILE" ]; then
     case "$GUI" in
         kdialog)
             CHOICE=$(kdialog --title "$APP_NAME — Déjà installé" \
-                --menu "FreeSmartSync Beta est déjà installé.\n\nQue souhaitez-vous faire ?" \
+                --menu "FreeSmartSync est déjà installé.\n\nQue souhaitez-vous faire ?" \
                 "reinstall" "Réinstaller / Mettre à jour" \
-                "uninstall" "Désinstaller FreeSmartSync Beta" \
+                "uninstall" "Désinstaller FreeSmartSync" \
                 "cancel" "Annuler")
             ;;
         zenity|qarma)
             CHOICE=$(zenity --list \
                 --title="$APP_NAME — Déjà installé" \
-                --text="FreeSmartSync Beta est déjà installé.\n\nQue souhaitez-vous faire ?" \
+                --text="FreeSmartSync est déjà installé.\n\nQue souhaitez-vous faire ?" \
                 --column="id" --column="Action" \
                 --hide-column=1 \
                 "reinstall" "🔄 Réinstaller / Mettre à jour les fichiers" \
-                "uninstall" "🗑️ Désinstaller FreeSmartSync Beta" \
+                "uninstall" "🗑️ Désinstaller FreeSmartSync" \
                 --width=480 --height=200 2>/dev/null)
             [ -z "$CHOICE" ] && CHOICE="cancel"
             ;;
@@ -230,9 +230,9 @@ Votre configuration sera conservée." \
 "$APP_NAME — Désinstallation"
             if [ $? -eq 0 ]; then
                 rm -rf "$HOME/.config/freesmartsync"
-                popup_info "✅ FreeSmartSync Beta et sa configuration ont été supprimés." "$APP_NAME"
+                popup_info "✅ FreeSmartSync et sa configuration ont été supprimés." "$APP_NAME"
             else
-                popup_info "✅ FreeSmartSync Beta a été désinstallé.\nConfiguration conservée." "$APP_NAME"
+                popup_info "✅ FreeSmartSync a été désinstallé.\nConfiguration conservée." "$APP_NAME"
             fi
             rm -rf "$INSTALL_DIR"
             rm -f "$DESKTOP_FILE"
@@ -247,7 +247,7 @@ Votre configuration sera conservée." \
 
 else
     popup_info \
-"Bienvenue dans l'installation de FreeSmartSync Beta !
+"Bienvenue dans l'installation de FreeSmartSync !
 
 FreeSmartSync synchronise votre smartphone Android
 avec votre ordinateur Linux, dans les deux sens.
@@ -266,7 +266,7 @@ if [ -n "$MISSING" ]; then
     if [ -z "$INSTALL_CMD" ]; then
         popup_error \
 "Votre distribution Linux n'est pas encore reconnue
-par FreeSmartSync Beta.
+par FreeSmartSync.
 
 Rendez-vous sur notre page GitHub pour obtenir
 de l'aide ou signaler votre distribution :
@@ -373,7 +373,7 @@ cat > "$DESKTOP_FILE" << EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=FreeSmartSync Beta
+Name=FreeSmartSync
 GenericName=Sauvegarde Android
 Comment=Synchronisation bidirectionnelle Android ↔ Linux
 Exec=python3 $INSTALL_DIR/freesmartsync.py
@@ -386,6 +386,19 @@ EOF
 
 chmod +x "$DESKTOP_FILE"
 
+# Créer aussi un lanceur sur le Bureau (Desktop) si disponible
+DESKTOP_DIR="$HOME/Bureau"
+[ ! -d "$DESKTOP_DIR" ] && DESKTOP_DIR="$HOME/Desktop"
+[ ! -d "$DESKTOP_DIR" ] && DESKTOP_DIR=""
+
+if [ -n "$DESKTOP_DIR" ]; then
+    LAUNCHER="$DESKTOP_DIR/FreeSmartSync.desktop"
+    cp "$DESKTOP_FILE" "$LAUNCHER"
+    chmod +x "$LAUNCHER"
+    # Sur GNOME/Zorin, marquer le .desktop comme "trusted"
+    gio set "$LAUNCHER" metadata::trusted true 2>/dev/null || true
+fi
+
 # Mise à jour base applications
 update-desktop-database "$HOME/.local/share/applications/" 2>/dev/null || true
 
@@ -396,7 +409,7 @@ close_progress "$PROG"
 # ─────────────────────────────────────────────
 
 popup_question \
-"✅ FreeSmartSync Beta est installé !
+"✅ FreeSmartSync est installé !
 
 Vous pouvez maintenant le lancer depuis :
   • Votre menu d'applications
@@ -406,11 +419,22 @@ Lancer FreeSmartSync maintenant ?" \
 "$APP_NAME — Installation réussie !"
 
 if [ $? -eq 0 ]; then
-    # Petit délai pour laisser le .desktop s'enregistrer
+    # Mise à jour de la base d'applications
+    update-desktop-database "$HOME/.local/share/applications/" 2>/dev/null || true
     sleep 1
-    # Lancement propre détaché du script
-    (sleep 0.5 && python3 "$INSTALL_DIR/freesmartsync.py") &
-    disown
+
+    # Délai pour laisser le bureau se stabiliser
+    sleep 2
+
+    # Lancement multi-méthodes pour compatibilité GNOME/KDE/Cinnamon
+    export DISPLAY="${DISPLAY:-:0}"
+    export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+
+    if command -v python3 &>/dev/null; then
+        # python3 direct — le plus fiable sur toutes les distros
+        setsid python3 "$INSTALL_DIR/freesmartsync.py" >/dev/null 2>&1 &
+        disown $!
+    fi
 fi
 
 exit 0

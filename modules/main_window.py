@@ -6,20 +6,25 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 from modules.i18n import t
 from modules.config import save_config, load_config
 from modules.worker import Worker
-from modules.dialogs import DeleteConfirmDialog, SummaryDialog
+from modules.dialogs import DeleteConfirmDialog, SummaryDialog, PreviewDialog, PreviewDialog
 from modules.adb_explorer import ADBExplorer
+from modules.profiles import ProfileDialog, load_profiles, save_profile
 
+<<<<<<< Updated upstream
 APP_VERSION = "v0.8.5.3"
+=======
+APP_VERSION = "v0.8.5.8-fix11"
+>>>>>>> Stashed changes
 
 
 class AboutDialog(QtWidgets.QDialog):
-    """Fenêtre À propos de FreeSmartSync Beta."""
+    """Fenêtre À propos de FreeSmartSync."""
 
     def __init__(self, lang="fr", device_id=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle(
-            f"À propos — FreeSmartSync Beta {APP_VERSION}" if lang == "fr"
-            else f"About — FreeSmartSync Beta {APP_VERSION}"
+            f"À propos — FreeSmartSync {APP_VERSION}" if lang == "fr"
+            else f"About — FreeSmartSync {APP_VERSION}"
         )
         self.setMinimumSize(560, 580)
 
@@ -31,7 +36,7 @@ class AboutDialog(QtWidgets.QDialog):
         layout.setContentsMargins(20, 15, 20, 15)
 
         # Titre
-        title = QtWidgets.QLabel("FreeSmartSync Beta")
+        title = QtWidgets.QLabel("FreeSmartSync")
         title.setAlignment(QtCore.Qt.AlignCenter)
         title.setStyleSheet("font-size:24px; font-weight:bold; color:#2c3e50; margin:8px;")
 
@@ -260,19 +265,34 @@ class MainWindow(QtWidgets.QWidget):
         self._setup_tray()
         self._connect_signals()
         self.detect_devices()
+        # Afficher le profil actif si défini
+        profile_name = config.get("active_profile", "")
+        if profile_name:
+            self.log.append(f"👤 Profil actif : {profile_name}")
+            self.setWindowTitle(
+                f"FreeSmartSync {APP_VERSION} — {profile_name}"
+            )
         self.showMaximized()
 
     def _get_icon_path(self, name="icon.png"):
         return os.path.join(os.path.dirname(__file__), "..", "assets", name)
 
     def _build_ui(self):
-        self.setWindowTitle(f"FreeSmartSync Beta {APP_VERSION}")
+        self.setWindowTitle(f"FreeSmartSync {APP_VERSION}")
         icon_path = self._get_icon_path()
         if os.path.exists(icon_path):
             self.setWindowIcon(QtGui.QIcon(icon_path))
 
-        self.scan_bar   = QtWidgets.QProgressBar()
-        self.copy_bar   = QtWidgets.QProgressBar()
+        self.scan_bar    = QtWidgets.QProgressBar()
+        self.copy_bar    = QtWidgets.QProgressBar()
+        self.push_bar    = QtWidgets.QProgressBar()  # PC → Tel
+
+        # Profil actif
+        self.profile_lbl = QtWidgets.QLabel()
+        self.profile_lbl.setStyleSheet(
+            "font-size:13px; color:#9b59b6; font-weight:bold;"
+        )
+        self._update_profile_label()
         self.status     = QtWidgets.QLabel(t("main_status_ready", self.lang))
         self.status.setStyleSheet("font-size:13px;")
         self.file_label = QtWidgets.QLabel(t("main_file", self.lang))
@@ -280,6 +300,15 @@ class MainWindow(QtWidgets.QWidget):
         self.dest_label = QtWidgets.QLabel(self.local_base)
         self.dest_label.setWordWrap(True)
         self.dest_label.setStyleSheet("font-size:12px; color:#555;")
+
+        # Label profil actif
+        self.profile_label = QtWidgets.QLabel("")
+        self.profile_label.setStyleSheet(
+            "font-size:13px; font-weight:bold; color:#9b59b6; "
+            "background:#f5eef8; border:1px solid #9b59b6; "
+            "border-radius:4px; padding:4px 8px;"
+        )
+        self.profile_label.setVisible(False)
 
         self.log = QtWidgets.QTextEdit()
         self.log.setReadOnly(True)
@@ -305,8 +334,17 @@ class MainWindow(QtWidgets.QWidget):
         self.resume_btn = QtWidgets.QPushButton(t("main_resume", self.lang))
         self.stop_btn   = QtWidgets.QPushButton(t("main_stop", self.lang))
         self.quit_btn   = QtWidgets.QPushButton(t("main_quit", self.lang))
-        self.about_btn  = QtWidgets.QPushButton(
+        self.about_btn    = QtWidgets.QPushButton(
             "ℹ️ À propos" if self.lang == "fr" else "ℹ️ About"
+        )
+        self.log_btn = QtWidgets.QPushButton(
+            "📋 Log" if self.lang == "fr" else "📋 Log"
+        )
+        self.profiles_btn = QtWidgets.QPushButton(
+            "👤 Profils" if self.lang == "fr" else "👤 Profiles"
+        )
+        self.log_btn = QtWidgets.QPushButton(
+            "📄 Log" if self.lang == "fr" else "📄 Log"
         )
         self.uninstall_btn = QtWidgets.QPushButton(
             "🗑️ Désinstaller" if self.lang == "fr" else "🗑️ Uninstall"
@@ -323,6 +361,9 @@ class MainWindow(QtWidgets.QWidget):
             "background-color:#e74c3c; color:white; font-weight:bold; font-size:14px; padding:6px;"
         )
         self.about_btn.setStyleSheet("background-color:#95a5a6; color:white; font-size:13px;")
+        self.log_btn.setStyleSheet("background-color:#7f8c8d; color:white; font-size:13px;")
+        self.profiles_btn.setStyleSheet("background-color:#9b59b6; color:white; font-size:13px;")
+        self.log_btn.setStyleSheet("background-color:#16a085; color:white; font-size:13px;")
         self.uninstall_btn.setStyleSheet(
             "background-color:#c0392b; color:white; font-weight:bold; font-size:13px;"
         )
@@ -340,18 +381,30 @@ class MainWindow(QtWidgets.QWidget):
         device_row.addWidget(self.detect_btn)
         top_row.addLayout(device_row)
         top_row.addStretch()
+        top_row.addWidget(self.profile_label)
+        top_row.addWidget(self.log_btn)
+        top_row.addWidget(self.profiles_btn)
         top_row.addWidget(self.about_btn)
         layout.addLayout(top_row)
 
         scan_lbl = QtWidgets.QLabel(t("main_scan", self.lang))
         scan_lbl.setStyleSheet("font-size:13px;")
-        copy_lbl = QtWidgets.QLabel(t("main_copy", self.lang))
+        copy_lbl = QtWidgets.QLabel(
+            "Copie Tel → PC" if self.lang == "fr" else "Copy Tel → PC"
+        )
         copy_lbl.setStyleSheet("font-size:13px;")
+        push_lbl = QtWidgets.QLabel(
+            "Copie PC → Tel" if self.lang == "fr" else "Copy PC → Tel"
+        )
+        push_lbl.setStyleSheet("font-size:13px;")
 
+        layout.addWidget(self.profile_lbl)
         layout.addWidget(scan_lbl)
         layout.addWidget(self.scan_bar)
         layout.addWidget(copy_lbl)
         layout.addWidget(self.copy_bar)
+        layout.addWidget(push_lbl)
+        layout.addWidget(self.push_bar)
         layout.addWidget(self.status)
         layout.addWidget(self.file_label)
 
@@ -396,7 +449,7 @@ class MainWindow(QtWidgets.QWidget):
         icon = QtGui.QIcon(icon_path) if os.path.exists(icon_path) else QtGui.QIcon()
 
         self.tray = QtWidgets.QSystemTrayIcon(icon, self)
-        self.tray.setToolTip(f"FreeSmartSync Beta {APP_VERSION}")
+        self.tray.setToolTip(f"FreeSmartSync {APP_VERSION}")
 
         tray_menu = QtWidgets.QMenu()
         show_action = tray_menu.addAction(
@@ -448,7 +501,7 @@ class MainWindow(QtWidgets.QWidget):
             icon_path = self._get_icon_path()
             if os.path.exists(icon_path):
                 self.tray.setIcon(QtGui.QIcon(icon_path))
-            self.tray.setToolTip(f"FreeSmartSync Beta {APP_VERSION}")
+            self.tray.setToolTip(f"FreeSmartSync {APP_VERSION}")
 
     def _tray_activated(self, reason):
         """Clic gauche sur icône tray → toggle affichage/masquage."""
@@ -494,6 +547,9 @@ class MainWindow(QtWidgets.QWidget):
         self.stop_btn.clicked.connect(self.stop)
         self.quit_btn.clicked.connect(self.close)
         self.about_btn.clicked.connect(self.show_about)
+        self.log_btn.clicked.connect(self.show_log)
+        self.log_btn.clicked.connect(self.open_log_file)
+        self.profiles_btn.clicked.connect(self.show_profiles)
         self.uninstall_btn.clicked.connect(self.uninstall)
         self.folder_list.model().rowsInserted.connect(self._auto_save)
         self.folder_list.model().rowsRemoved.connect(self._auto_save)
@@ -512,7 +568,7 @@ class MainWindow(QtWidgets.QWidget):
         self.hide()
         if self.tray:
             self.tray.showMessage(
-                "FreeSmartSync Beta",
+                "FreeSmartSync",
                 "FreeSmartSync est dans la barre système. Cliquez sur l'icône pour le rouvrir."
                 if self.lang == "fr" else
                 "FreeSmartSync is in the system tray. Click the icon to reopen it.",
@@ -653,6 +709,79 @@ class MainWindow(QtWidgets.QWidget):
             save_config(self.config)
             self.log.append("💾 Configuration sauvegardée.")
 
+    def _scroll_log(self):
+        """Auto-scroll du log vers le bas."""
+        self.log.verticalScrollBar().setValue(
+            self.log.verticalScrollBar().maximum()
+        )
+
+    def open_log_file(self):
+        """Ouvre le fichier de log dans l'éditeur par défaut."""
+        import subprocess as sp
+        log_file = os.path.expanduser("~/.config/freesmartsync/sync.log")
+        if os.path.exists(log_file):
+            sp.Popen(["xdg-open", log_file])
+        else:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Log" if self.lang == "fr" else "Log",
+                "Aucun log disponible — lancez une synchronisation d'abord."
+                if self.lang == "fr" else
+                "No log available — run a sync first."
+            )
+
+    def show_log(self):
+        """Affiche le log complet dans une fenêtre séparée."""
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("📋 Log" if self.lang == "fr" else "📋 Log")
+        dlg.setMinimumSize(700, 500)
+        layout = QtWidgets.QVBoxLayout()
+        log_view = QtWidgets.QTextEdit()
+        log_view.setReadOnly(True)
+        log_view.setStyleSheet("font-family:monospace; font-size:12px;")
+        log_view.setPlainText(self.log.toPlainText())
+        btn_close = QtWidgets.QPushButton("Fermer" if self.lang == "fr" else "Close")
+        btn_close.clicked.connect(dlg.accept)
+        layout.addWidget(log_view)
+        layout.addWidget(btn_close, 0, QtCore.Qt.AlignRight)
+        dlg.setLayout(layout)
+        dlg.exec_()
+
+    def show_profiles(self):
+        """Ouvre le gestionnaire de profils."""
+        dlg = ProfileDialog(
+            current_config=self.config,
+            lang=self.lang,
+            parent=self
+        )
+        def on_profile_selected(name, profile):
+            """Applique le profil sélectionné."""
+            self.config["folders"]        = profile.get("folders", [])
+            self.config["local_base"]     = profile.get("local_base", "")
+            self.config["active_profile"] = name
+            self.local_base               = self.config["local_base"]
+
+            # Mettre à jour l'interface
+            self.folder_list.clear()
+            self.folder_list.addItems(self.config["folders"])
+            self.dest_label.setText(self.local_base)
+
+            from modules.config import save_config
+            save_config(self.config)
+
+            # Réinitialiser le log lors du changement de profil
+            self.log.clear()
+            self.log.append("─" * 40)
+            self.log.append(f"👤 Profil chargé : {name}")
+            self.log.append(
+                f"   📁 {len(self.config['folders'])} dossier(s) sélectionné(s)"
+            )
+            self.log.append(f"   💾 Sauvegarde : {self.local_base}")
+            self.log.append("─" * 40)
+
+        dlg.profile_selected.connect(on_profile_selected)
+        dlg.exec_()
+
     def show_about(self):
         device_id = self._get_current_device_id() or None
         dlg = AboutDialog(lang=self.lang, device_id=device_id, parent=self)
@@ -664,17 +793,17 @@ class MainWindow(QtWidgets.QWidget):
 
         dlg1 = QtWidgets.QMessageBox(self)
         dlg1.setWindowTitle(
-            "🗑️ Désinstaller FreeSmartSync Beta" if lang == "fr"
-            else "🗑️ Uninstall FreeSmartSync Beta"
+            "🗑️ Désinstaller FreeSmartSync" if lang == "fr"
+            else "🗑️ Uninstall FreeSmartSync"
         )
         dlg1.setIcon(QtWidgets.QMessageBox.Warning)
         dlg1.setText(
-            "<b>Êtes-vous sûr de vouloir désinstaller FreeSmartSync Beta ?</b><br><br>"
+            "<b>Êtes-vous sûr de vouloir désinstaller FreeSmartSync ?</b><br><br>"
             "• Le logiciel FreeSmartSync sera supprimé<br>"
             "• Le raccourci dans le menu d'applications sera supprimé<br><br>"
             "<b>Vos données de sauvegarde ne seront PAS supprimées.</b>"
             if lang == "fr" else
-            "<b>Are you sure you want to uninstall FreeSmartSync Beta?</b><br><br>"
+            "<b>Are you sure you want to uninstall FreeSmartSync?</b><br><br>"
             "• FreeSmartSync software will be removed<br>"
             "• Application menu shortcut will be removed<br><br>"
             "<b>Your backup data will NOT be deleted.</b>"
@@ -709,16 +838,80 @@ class MainWindow(QtWidgets.QWidget):
         if dlg2.exec_() == QtWidgets.QMessageBox.Yes:
             delete_config = True
 
-        install_dir  = os.path.expanduser("~/.local/share/freesmartsync")
-        desktop_file = os.path.expanduser("~/.local/share/applications/freesmartsync.desktop")
-        config_dir   = os.path.expanduser("~/.config/freesmartsync")
+        # Option désinstallation outils système (optionnelle)
+        delete_tools = False
+        dlg3 = QtWidgets.QMessageBox(self)
+        dlg3.setWindowTitle("🗑️ Outils système")
+        dlg3.setIcon(QtWidgets.QMessageBox.Question)
+        dlg3.setText(
+            "<b>Désinstaller les outils système installés par FreeSmartSync ?</b><br><br>"
+            "• android-tools (ADB)<br><br>"
+            "<i>⚠️ Attention : ces outils peuvent être utilisés par d'autres logiciels.<br>"
+            "Ne désinstallez que si vous êtes sûr de ne pas en avoir besoin.</i>"
+            if lang == "fr" else
+            "<b>Uninstall system tools installed by FreeSmartSync?</b><br><br>"
+            "• android-tools (ADB)<br><br>"
+            "<i>⚠️ Warning: these tools may be used by other software.<br>"
+            "Only uninstall if you are sure you don't need them.</i>"
+        )
+        dlg3.setStandardButtons(
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        dlg3.button(QtWidgets.QMessageBox.Yes).setText(
+            "Oui, supprimer ADB" if lang == "fr" else "Yes, remove ADB"
+        )
+        dlg3.button(QtWidgets.QMessageBox.No).setText(
+            "Non, garder" if lang == "fr" else "No, keep"
+        )
+        dlg3.setDefaultButton(QtWidgets.QMessageBox.No)
+        if dlg3.exec_() == QtWidgets.QMessageBox.Yes:
+            delete_tools = True
+
+        install_dir   = os.path.expanduser("~/.local/share/freesmartsync")
+        desktop_file  = os.path.expanduser("~/.local/share/applications/freesmartsync.desktop")
+        config_dir    = os.path.expanduser("~/.config/freesmartsync")
+        autostart_dir = os.path.expanduser("~/.config/autostart/freesmartsync.desktop")
 
         try:
-            if os.path.exists(install_dir):  shutil.rmtree(install_dir)
-            if os.path.exists(desktop_file): os.remove(desktop_file)
-            if delete_config and os.path.exists(config_dir): shutil.rmtree(config_dir)
+            # Supprimer le répertoire d'installation
+            if os.path.exists(install_dir):
+                shutil.rmtree(install_dir)
+            # Supprimer le .desktop du menu
+            if os.path.exists(desktop_file):
+                os.remove(desktop_file)
+            # Supprimer le .desktop du bureau si présent
+            for bureau in [
+                os.path.expanduser("~/Bureau/FreeSmartSync.desktop"),
+                os.path.expanduser("~/Desktop/FreeSmartSync.desktop"),
+            ]:
+                if os.path.exists(bureau):
+                    os.remove(bureau)
+            # Supprimer l'autostart si présent
+            if os.path.exists(autostart_dir):
+                os.remove(autostart_dir)
+            # Supprimer la config si demandé
+            if delete_config and os.path.exists(config_dir):
+                shutil.rmtree(config_dir)
+            # Désinstaller les outils si demandé
+            if delete_tools:
+                import platform
+                # Détecter le gestionnaire de paquets
+                pkg_cmds = []
+                if subprocess.run(["which", "apt-get"],
+                        capture_output=True).returncode == 0:
+                    pkg_cmds = ["sudo", "apt-get", "remove", "-y", "android-tools-adb"]
+                elif subprocess.run(["which", "dnf"],
+                        capture_output=True).returncode == 0:
+                    pkg_cmds = ["sudo", "dnf", "remove", "-y", "android-tools"]
+                elif subprocess.run(["which", "pacman"],
+                        capture_output=True).returncode == 0:
+                    pkg_cmds = ["sudo", "pacman", "-R", "--noconfirm", "android-tools"]
+                if pkg_cmds:
+                    subprocess.run(pkg_cmds, capture_output=True)
+            # Mise à jour base applications
             subprocess.run(
-                ["update-desktop-database", os.path.expanduser("~/.local/share/applications/")],
+                ["update-desktop-database",
+                 os.path.expanduser("~/.local/share/applications/")],
                 capture_output=True
             )
         except Exception as e:
@@ -731,9 +924,9 @@ class MainWindow(QtWidgets.QWidget):
         QtWidgets.QMessageBox.information(
             self,
             "✅ Désinstallé" if lang == "fr" else "✅ Uninstalled",
-            "FreeSmartSync Beta a été désinstallé avec succès.\n\nMerci de l'avoir utilisé ! 👋"
+            "FreeSmartSync a été désinstallé avec succès.\n\nMerci de l'avoir utilisé ! 👋"
             if lang == "fr" else
-            "FreeSmartSync Beta has been successfully uninstalled.\n\nThank you for using it! 👋"
+            "FreeSmartSync has been successfully uninstalled.\n\nThank you for using it! 👋"
         )
         if self.tray:
             self.tray.hide()
@@ -750,6 +943,42 @@ class MainWindow(QtWidgets.QWidget):
         self.folder_list.setEnabled(not running)
         if self.tray:
             self.sync_tray_action.setEnabled(not running)
+
+    def show_preview_dialog(self, preview_data):
+        """Affiche le récap pré-sync et attend validation."""
+        dlg      = PreviewDialog(preview_data, lang=self.lang, parent=self)
+        accepted = dlg.exec_() == QtWidgets.QDialog.Accepted
+        self.worker.preview_result(accepted)
+        if not accepted:
+            self.set_ui_running(False)
+            self._stop_tray_animation()
+            self.status.setText(
+                "Synchronisation annulée." if self.lang == "fr"
+                else "Sync cancelled."
+            )
+
+    def _update_profile_label(self):
+        """Met à jour le label du profil actif."""
+        name = self.config.get("active_profile", "")
+        if name:
+            self.profile_lbl.setText(
+                f"Profil actif : {name}"
+                if self.lang == "fr" else
+                f"Active profile: {name}"
+            )
+        else:
+            self.profile_lbl.setText("")
+
+    def show_preview_dialog(self, preview_data):
+        """Affiche la popup de prévisualisation avant sync."""
+        changes = preview_data.get("changes", {})
+        dlg = PreviewDialog(changes, lang=self.lang, parent=self)
+
+        def on_confirmed(ok):
+            self.worker.preview_confirm(ok)
+
+        dlg.confirmed.connect(on_confirmed)
+        dlg.exec_()
 
     def show_confirm_dialog(self, files_to_delete):
         dlg      = DeleteConfirmDialog(files_to_delete, lang=self.lang, parent=self)
@@ -775,19 +1004,31 @@ class MainWindow(QtWidgets.QWidget):
         self._active_device_id = device_id  # Mémorise pour désactivation ADB
         self.scan_bar.setValue(0)
         self.copy_bar.setValue(0)
+        self.push_bar.setValue(0)
         self.status.setText("Démarrage...")
         self.file_label.setText(t("main_file", self.lang))
+        # Réinitialiser le log à chaque nouvelle sync
+        self.log.clear()
+        self.log.append("─" * 40)
+        profile_name = self.config.get("active_profile", "")
+        if profile_name:
+            self.log.append(f"👤 Profil : {profile_name}")
+        self.log.append("🚀 Nouvelle synchronisation démarrée")
+        self.log.append("─" * 40)
 
         folders = [self.folder_list.item(i).text() for i in range(self.folder_list.count())]
 
         self.worker = Worker(folders, self.local_base, device_id, self.lang)
         self.worker.scan_progress.connect(self.scan_bar.setValue)
         self.worker.progress.connect(self.copy_bar.setValue)
+        self.worker.push_progress.connect(self.push_bar.setValue)
+        self.worker.log.connect(lambda msg: self._scroll_log())
         self.worker.status.connect(self.status.setText)
         self.worker.current_file.connect(self.file_label.setText)
         self.worker.log.connect(self.log.append)
         self.worker.done.connect(self.on_done)
         self.worker.request_confirm.connect(self.show_confirm_dialog)
+        self.worker.preview_ready.connect(self.show_preview_dialog)
 
         self.set_ui_running(True)
         self._start_tray_animation()
@@ -796,6 +1037,11 @@ class MainWindow(QtWidgets.QWidget):
     def on_done(self, summary):
         self._stop_tray_animation()
         self.set_ui_running(False)
+        # Cas annulation (utilisateur a cliqué Non dans la prévisualisation)
+        if summary.get("cancelled"):
+            self.status.setText("Annulé" if self.lang == "fr" else "Cancelled")
+            self.log.append("🚫 Synchronisation annulée.")
+            return
         self.status.setText("Terminé ✅")
 
         if self.tray and summary:

@@ -1,5 +1,5 @@
 # modules/wizard.py
-# Assistant de premier lancement FreeSmartSync Beta v0.8.5.1
+# Assistant de premier lancement FreeSmartSync v0.8.5.1
 
 import os
 import subprocess
@@ -8,6 +8,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 from modules.i18n import t, FOLDER_DESCRIPTIONS, USB_DEBUG_STEPS
 from modules.deps import detect_distrib, get_deps_status, install_deps, all_deps_ok
 from modules.config import get_free_space, format_size, save_config
+from modules.profiles import load_profiles, save_profile, get_profile
 
 FONT_SIZE_TITLE   = "font-size:22px;"
 FONT_SIZE_NORMAL  = "font-size:14px;"
@@ -34,7 +35,7 @@ class WizardWindow(QtWidgets.QDialog):
         self.lang   = "fr"
         self.config = {}
 
-        self.setWindowTitle("FreeSmartSync Beta — Installation")
+        self.setWindowTitle("FreeSmartSync — Installation")
         self.setMinimumSize(750, 600)
         self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowContextHelpButtonHint)
 
@@ -81,24 +82,26 @@ class WizardWindow(QtWidgets.QDialog):
         self._show_page(0)
 
     def _build_pages(self):
-        self.page_lang    = PageLanguage(self)
-        self.page_welcome = PageWelcome(self)
-        self.page_deps    = PageDeps(self)
-        self.page_phone   = PagePhone(self)   # idx 3 — procédure débogage
-        self.page_usb     = PageUSBConnect(self)  # idx 4 — brancher tel
-        self.page_folders = PageFolders(self)
-        self.page_dest    = PageDest(self)
-        self.page_summary = PageSummary(self)
+        self.page_lang     = PageLanguage(self)
+        self.page_welcome  = PageWelcome(self)
+        self.page_deps     = PageDeps(self)
+        self.page_phone    = PagePhone(self)      # idx 3 — procédure débogage
+        self.page_usb      = PageUSBConnect(self) # idx 4 — brancher tel
+        self.page_profiles = PageProfiles(self)   # idx 5 — gestion profils
+        self.page_folders  = PageFolders(self)    # idx 6
+        self.page_dest     = PageDest(self)       # idx 7
+        self.page_summary  = PageSummary(self)    # idx 8
 
         self.pages = [
             self.page_lang,     # 0
             self.page_welcome,  # 1
             self.page_deps,     # 2
-            self.page_phone,    # 3 — d'abord la procédure
-            self.page_usb,      # 4 — ensuite brancher
-            self.page_folders,  # 5
-            self.page_dest,     # 6
-            self.page_summary,  # 7
+            self.page_phone,    # 3
+            self.page_usb,      # 4
+            self.page_profiles, # 5 — NOUVEAU
+            self.page_folders,  # 6
+            self.page_dest,     # 7
+            self.page_summary,  # 8
         ]
         for p in self.pages:
             self.stack.addWidget(p)
@@ -119,10 +122,12 @@ class WizardWindow(QtWidgets.QDialog):
         if idx == 2: self.page_deps.refresh(self.lang)
         if idx == 3: self.page_phone.refresh(self.lang)
         if idx == 4: self.page_usb.refresh(self.lang)
-        if idx == 5:
+        if idx == 5: self.page_profiles.refresh(self.lang)
+        if idx == 6:
             device_id = self.page_usb.get_device_id() or self.config.get("device_id")
             self.page_folders.refresh(self.lang, device_id=device_id)
-        if idx == 7: self.page_summary.refresh(self.lang, self.config)
+        if idx == 7: self.page_dest.refresh(self.lang)
+        if idx == 8: self.page_summary.refresh(self.lang, self.config)
 
         # Timer USB actif seulement sur la page USB (idx=4)
         if idx == 4:
@@ -169,6 +174,13 @@ class WizardWindow(QtWidgets.QDialog):
             self.config["device_id"] = device_id
 
         elif self.current == 5:
+            # Profils — récupérer le profil sélectionné si applicable
+            profile = self.page_profiles.get_selected_profile()
+            if profile:
+                self.config.update(profile["data"])
+                self.config["active_profile"] = profile["name"]
+
+        elif self.current == 6:
             folders = self.page_folders.get_folders()
             if not folders:
                 QtWidgets.QMessageBox.warning(
@@ -178,7 +190,7 @@ class WizardWindow(QtWidgets.QDialog):
                 return
             self.config["folders"] = folders
 
-        elif self.current == 6:
+        elif self.current == 7:
             dest = self.page_dest.get_dest()
             if not dest:
                 QtWidgets.QMessageBox.warning(
@@ -463,9 +475,10 @@ class PageDeps(QtWidgets.QWidget):
         self.title_lbl.setText(t("deps_title", lang))
         self.desc_lbl.setText(t("deps_desc", lang))
 
-        distrib_name, pkg_manager, install_cmd = detect_distrib()
+        distrib_name, pkg_manager, install_cmd, use_su = detect_distrib()
         self._install_cmd  = install_cmd
         self._distrib_name = distrib_name
+        self._use_su       = use_su
         self.distrib_lbl.setText(
             f"🐧 {t('deps_distrib', lang)} <b>{distrib_name}</b> ({pkg_manager})"
         )
@@ -499,7 +512,7 @@ class PageDeps(QtWidgets.QWidget):
             self.install_btn.setText(t("deps_install_btn", self.lang))
             return
 
-        success, output = install_deps(self._distrib_name, "", self._install_cmd, password=pwd)
+        success, output = install_deps(self._distrib_name, "", self._install_cmd, use_su=getattr(self, '_use_su', False), password=pwd)
 
         if success:
             self.result_lbl.setText(t("deps_all_ok", self.lang))
@@ -641,7 +654,7 @@ class PageUSBConnect(QtWidgets.QWidget):
         self.device_id = None
 
         layout = QtWidgets.QVBoxLayout()
-        layout.setAlignment(QtCore.Qt.AlignCenter)
+        layout.setAlignment(QtCore.Qt.AlignTop)
         layout.setSpacing(10)
         layout.setContentsMargins(20, 15, 20, 15)
 
@@ -656,17 +669,13 @@ class PageUSBConnect(QtWidgets.QWidget):
 
         self.anim_lbl = QtWidgets.QLabel()
         self.anim_lbl.setAlignment(QtCore.Qt.AlignCenter)
-        self.anim_lbl.setStyleSheet("font-size:42px; margin:8px;")
+        self.anim_lbl.setMinimumHeight(80)
+        self.anim_lbl.setStyleSheet("margin:8px;")
 
-        self.anim_frames = [
-            "📱 ·········· 💻",
-            "📱 ·🔌········ 💻",
-            "📱 ···🔌······ 💻",
-            "📱 ·····🔌···· 💻",
-            "📱 ·······🔌·· 💻",
-            "📱 ─────────🔌 💻",
-        ]
-        self.anim_frame_connected = "📱 ══════════ 💻  ✅"
+        # Frames d'animation HTML — belle représentation visuelle
+        # sans emoji pour compatibilité universelle
+        self._dot_pos = 0
+        self._dot_count = 12
         self.anim_index = 0
 
         self.timer = QtCore.QTimer()
@@ -712,10 +721,18 @@ class PageUSBConnect(QtWidgets.QWidget):
         self.detect_timer = QtCore.QTimer()
         self.detect_timer.timeout.connect(self._detect)
 
-        layout.addStretch()
+        # Zone animation centrée
+        anim_container = QtWidgets.QWidget()
+        anim_layout = QtWidgets.QHBoxLayout(anim_container)
+        anim_layout.setContentsMargins(0, 0, 0, 0)
+        anim_layout.addStretch()
+        anim_layout.addWidget(self.anim_lbl)
+        anim_layout.addStretch()
+
         layout.addWidget(self.title_lbl)
         layout.addWidget(self.desc_lbl)
-        layout.addWidget(self.anim_lbl)
+        layout.addWidget(anim_container)
+        # Les cadres info prennent toute la largeur
         layout.addWidget(self.why_lbl)
         layout.addWidget(self.cable_lbl)
         layout.addWidget(self.status_lbl)
@@ -777,11 +794,40 @@ class PageUSBConnect(QtWidgets.QWidget):
         self._detect()
 
     def _animate(self):
+        """Animation visuelle de connexion USB — HTML, sans emoji."""
         if self.device_id:
-            self.anim_lbl.setText(self.anim_frame_connected)
+            html = (
+                "<div style='text-align:center; font-family:sans-serif;'>"
+                "<span style='font-size:13px; font-weight:bold; color:#27ae60;"
+                " background:#eafaf1; border:2px solid #27ae60;"
+                " border-radius:6px; padding:5px 12px;'>SMARTPHONE</span>"
+                "<span style='font-size:14px; color:#27ae60; font-weight:bold;"
+                " padding:0 8px;'> ==================&gt; </span>"
+                "<span style='font-size:13px; font-weight:bold; color:#27ae60;"
+                " background:#eafaf1; border:2px solid #27ae60;"
+                " border-radius:6px; padding:5px 12px;'>PC</span>"
+                "<div style='font-size:13px; color:#27ae60; font-weight:bold;"
+                " margin-top:6px;'>Connecte - OK</div>"
+                "</div>"
+            )
+            self.anim_lbl.setText(html)
         else:
-            self.anim_lbl.setText(self.anim_frames[self.anim_index])
-            self.anim_index = (self.anim_index + 1) % len(self.anim_frames)
+            self._dot_pos = (self._dot_pos + 1) % (self._dot_count + 1)
+            before = "-" * self._dot_pos
+            after  = "-" * (self._dot_count - self._dot_pos)
+            html = (
+                "<div style='text-align:center; font-family:monospace;'>"
+                "<span style='font-size:13px; font-weight:bold; color:#3498db;"
+                " background:#eaf2ff; border:2px solid #3498db;"
+                " border-radius:6px; padding:5px 12px;'>SMARTPHONE</span>"
+                f"<span style='font-size:14px; color:#3498db; font-weight:bold;"
+                f" padding:0 6px; letter-spacing:1px;'> {before}&gt;{after} </span>"
+                "<span style='font-size:13px; font-weight:bold; color:#3498db;"
+                " background:#eaf2ff; border:2px solid #3498db;"
+                " border-radius:6px; padding:5px 12px;'>PC</span>"
+                "</div>"
+            )
+            self.anim_lbl.setText(html)
 
     def _detect(self):
         result = subprocess.run(
@@ -873,6 +919,154 @@ class PageUSBConnect(QtWidgets.QWidget):
 
 
 # ─────────────────────────────────────────────
+# Page 6 : Gestion des profils (NOUVEAU)
+# ─────────────────────────────────────────────
+
+class PageProfiles(QtWidgets.QWidget):
+    """
+    Page de gestion des profils dans le wizard.
+    Permet de créer un nouveau profil, choisir un profil existant,
+    ou continuer avec la configuration par défaut.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.lang = "fr"
+        self._selected = None  # {"name": ..., "data": {...}}
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.setSpacing(10)
+        layout.setContentsMargins(20, 15, 20, 15)
+
+        self.title_lbl = QtWidgets.QLabel()
+        self.title_lbl.setStyleSheet("font-size:20px; font-weight:bold;")
+
+        self.desc_lbl = QtWidgets.QLabel()
+        self.desc_lbl.setWordWrap(True)
+        self.desc_lbl.setStyleSheet(
+            "font-size:13px; background:#eaf2ff; border:1px solid #3498db; "
+            "border-radius:4px; padding:10px;"
+        )
+
+        # Option 1 : Nouveau profil
+        self.opt_new = QtWidgets.QRadioButton()
+        self.opt_new.setStyleSheet("font-size:14px; font-weight:bold;")
+        self.opt_new.setChecked(True)
+
+        self.new_name_edit = QtWidgets.QLineEdit()
+        self.new_name_edit.setStyleSheet("font-size:13px; padding:4px;")
+        self.new_name_edit.setPlaceholderText(
+            "Ex : Joffrey, Samsung Galaxy S24, Téléphone Marie..."
+        )
+
+        new_box = QtWidgets.QVBoxLayout()
+        new_box.addWidget(self.opt_new)
+        new_box.addWidget(self.new_name_edit)
+        new_widget = QtWidgets.QWidget()
+        new_widget.setLayout(new_box)
+        new_widget.setStyleSheet(
+            "background:#f8f9fa; border:1px solid #dee2e6; "
+            "border-radius:4px; padding:6px;"
+        )
+
+        # Option 2 : Profil existant
+        self.opt_existing = QtWidgets.QRadioButton()
+        self.opt_existing.setStyleSheet("font-size:14px; font-weight:bold;")
+
+        self.profile_combo = QtWidgets.QComboBox()
+        self.profile_combo.setStyleSheet("font-size:13px; padding:4px;")
+        self.profile_combo.setEnabled(False)
+
+        existing_box = QtWidgets.QVBoxLayout()
+        existing_box.addWidget(self.opt_existing)
+        existing_box.addWidget(self.profile_combo)
+        existing_widget = QtWidgets.QWidget()
+        existing_widget.setLayout(existing_box)
+        existing_widget.setStyleSheet(
+            "background:#f8f9fa; border:1px solid #dee2e6; "
+            "border-radius:4px; padding:6px;"
+        )
+
+        # Option 3 : Pas de profil (config par défaut)
+        self.opt_none = QtWidgets.QRadioButton()
+        self.opt_none.setStyleSheet("font-size:13px; color:#777;")
+
+        # Connexions
+        self.opt_new.toggled.connect(lambda v: self.new_name_edit.setEnabled(v))
+        self.opt_existing.toggled.connect(lambda v: self.profile_combo.setEnabled(v))
+
+        layout.addWidget(self.title_lbl)
+        layout.addWidget(self.desc_lbl)
+        layout.addSpacing(6)
+        layout.addWidget(new_widget)
+        layout.addWidget(existing_widget)
+        layout.addWidget(self.opt_none)
+        layout.addStretch()
+        self.setLayout(layout)
+
+    def refresh(self, lang):
+        self.lang = lang
+        self.title_lbl.setText(
+            "👤 Gestion des profils" if lang == "fr" else "👤 Profile management"
+        )
+        self.desc_lbl.setText(
+            "Un <b>profil</b> permet de sauvegarder les paramètres de synchronisation "
+            "(dossiers + répertoire) pour un téléphone ou un utilisateur.<br>"
+            "Pratique dans un foyer avec plusieurs smartphones !"
+            if lang == "fr" else
+            "A <b>profile</b> saves sync settings (folders + directory) "
+            "for a phone or user.<br>"
+            "Handy in a household with multiple smartphones!"
+        )
+        self.opt_new.setText(
+            "✨ Créer un nouveau profil" if lang == "fr" else "✨ Create a new profile"
+        )
+        self.opt_existing.setText(
+            "👤 Utiliser un profil existant" if lang == "fr" else "👤 Use an existing profile"
+        )
+        self.opt_none.setText(
+            "⏭ Continuer sans profil (configuration par défaut)"
+            if lang == "fr" else
+            "⏭ Continue without profile (default config)"
+        )
+        self.new_name_edit.setPlaceholderText(
+            "Ex : Joffrey, Samsung Galaxy S24, Téléphone Marie..."
+            if lang == "fr" else
+            "E.g.: John, Samsung Galaxy S24, Marie's phone..."
+        )
+
+        # Charger les profils existants
+        self.profile_combo.clear()
+        profiles = load_profiles()
+        if profiles:
+            for name in profiles:
+                self.profile_combo.addItem(f"👤 {name}", name)
+            self.opt_existing.setEnabled(True)
+        else:
+            self.opt_existing.setEnabled(False)
+            self.opt_existing.setText(
+                "👤 Utiliser un profil existant (aucun profil enregistré)"
+                if lang == "fr" else
+                "👤 Use an existing profile (no saved profiles)"
+            )
+
+    def get_selected_profile(self):
+        """
+        Retourne {"name": ..., "data": {...}} ou None si pas de profil.
+        Crée automatiquement le profil si 'Nouveau profil' est sélectionné.
+        """
+        if self.opt_new.isChecked():
+            name = self.new_name_edit.text().strip()
+            if name:
+                # Profil vide — sera rempli par les étapes suivantes
+                return {"name": name, "data": {}}
+        elif self.opt_existing.isChecked():
+            name = self.profile_combo.currentData()
+            if name:
+                return {"name": name, "data": get_profile(name)}
+        return None
+
+
+# ─────────────────────────────────────────────
 # Page 6 : Dossiers
 # ─────────────────────────────────────────────
 
@@ -933,7 +1127,24 @@ class PageFolders(QtWidgets.QWidget):
         self.lang = lang
         if device_id: self.device_id = device_id
         self.title_lbl.setText(t("folders_title", lang))
-        self.desc_lbl.setText(t("folders_desc", lang))
+
+        if lang == "fr":
+            desc = (
+                "Choisissez ici les <b>dossiers de votre téléphone</b> à synchroniser.<br>"
+                "Seuls les dossiers sélectionnés seront copiés et surveillés par FreeSmartSync.<br>"
+                "Conseil : sélectionnez DCIM pour les photos, Download pour les téléchargements, etc.<br>"
+                "<b>💡 Astuce :</b> Dans l'explorateur, vous pouvez sélectionner "
+                "<b>plusieurs dossiers à la fois</b> en maintenant Ctrl enfoncé !"
+            )
+        else:
+            desc = (
+                "Choose here the <b>folders on your phone</b> to synchronize.<br>"
+                "Only selected folders will be copied and monitored by FreeSmartSync.<br>"
+                "Tip: select DCIM for photos, Download for downloads, etc.<br>"
+                "<b>💡 Tip:</b> In the explorer, you can select "
+                "<b>multiple folders at once</b> by holding Ctrl!"
+            )
+        self.desc_lbl.setText(desc)
         self.hint_lbl.setText(t("folders_hint", lang))
         self.add_btn.setText(t("folders_add", lang))
         self.remove_btn.setText(t("folders_remove", lang))
@@ -977,11 +1188,21 @@ class PageFolders(QtWidgets.QWidget):
 
         self.device_id = device_id
         from modules.adb_explorer import ADBExplorer
-        explorer = ADBExplorer(device_id, self)
+        explorer = ADBExplorer(device_id, self, multi_select=True)
         if explorer.exec_():
-            path = explorer.selected_path()
-            if path and not self._folder_exists(path):
-                self.folder_list.addItem(path)
+            paths = explorer.selected_paths()
+            added = 0
+            for path in paths:
+                if path and not self._folder_exists(path):
+                    self.folder_list.addItem(path)
+                    added += 1
+            if added > 0:
+                msg = (
+                    f"{added} dossier(s) ajouté(s)."
+                    if self.lang == "fr" else
+                    f"{added} folder(s) added."
+                )
+                self.hint_lbl.setText(f"✅ {msg}")
 
     def _remove_folder(self):
         for item in self.folder_list.selectedItems():
