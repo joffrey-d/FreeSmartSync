@@ -1,5 +1,0 @@
-{
-  "version": "0.8.5.8-fix14",
-  "download_url": "https://github.com/joffrey-d/FreeSmartSync/releases/latest/download/freesmartsync-v0.8.5.8-fix14.zip",
-  "notes": "Explorateur ADB : sous-dossiers visibles (find -maxdepth 1), plus de boucle itemChanged"
-}
