@@ -1,1 +1,0 @@
-# FreeSmartSync Beta — modules package
