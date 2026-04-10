@@ -1,6 +1,0 @@
-Copiez adb.exe ici si vous ne souhaitez pas ajouter ADB à votre PATH.
-
-Téléchargez Android Platform Tools :
-https://developer.android.com/studio/releases/platform-tools
-
-Copiez uniquement adb.exe (et AdbWinApi.dll, AdbWinUsbApi.dll si présents) dans ce dossier.
