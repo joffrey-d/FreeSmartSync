@@ -1,5 +1,3 @@
-# FreeSmartSync v0.8.6.7
-
 **Synchronisation bidirectionnelle Android ↔ Linux**
 
 > Idée & conception : Joffrey | Développement : Claude (Anthropic) | Licence : GPL v3
