@@ -1,0 +1,5 @@
+{
+  "version": "0.8.7.5",
+  "download_url": "https://github.com/joffrey-d/FreeSmartSync/archive/refs/heads/development.zip",
+  "notes": "Mageia: su -c direct sans pkexec · Message erreur si PyQt5 manquant"
+}
