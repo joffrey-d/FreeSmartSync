@@ -46,6 +46,15 @@ def delete_profile(name):
     save_profiles(profiles)
 
 
+def _set_icon(widget):
+    import os
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    p = os.path.join(base, 'assets', 'icon.png')
+    if os.path.exists(p):
+        from PyQt5 import QtGui
+        widget.setWindowIcon(QtGui.QIcon(p))
+
+
 class ProfileDialog(QtWidgets.QDialog):
     """
     Gestionnaire de profils — permet de créer, modifier, supprimer et
@@ -61,11 +70,14 @@ class ProfileDialog(QtWidgets.QDialog):
         self.setWindowTitle(
             "👤 Gestion des profils" if lang == "fr" else "👤 Profile management"
         )
+        _set_icon(self)
         self.setMinimumSize(580, 480)
         self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowContextHelpButtonHint)
-        import os as _os; from PyQt5 import QtGui as _Gui
-        _ip = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "assets", "icon.png")
-        if _os.path.exists(_ip): self.setWindowIcon(_Gui.QIcon(_ip))
+
+        from PyQt5 import QtWidgets as _Qw
+        _app = _Qw.QApplication.instance()
+        if _app and not _app.windowIcon().isNull():
+            self.setWindowIcon(_app.windowIcon())
 
         layout = QtWidgets.QVBoxLayout()
         layout.setSpacing(10)
@@ -300,10 +312,13 @@ class ProfileEditDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.lang = lang
         self.setWindowTitle(f"✏️ Modifier le profil : {name}")
+        _set_icon(self)
         self.setMinimumSize(480, 360)
-        import os as _os; from PyQt5 import QtGui as _Gui
-        _ip = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "assets", "icon.png")
-        if _os.path.exists(_ip): self.setWindowIcon(_Gui.QIcon(_ip))
+
+        from PyQt5 import QtWidgets as _Qw
+        _app = _Qw.QApplication.instance()
+        if _app and not _app.windowIcon().isNull():
+            self.setWindowIcon(_app.windowIcon())
 
         layout = QtWidgets.QVBoxLayout()
         layout.setSpacing(10)

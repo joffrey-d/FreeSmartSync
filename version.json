@@ -1,5 +1,5 @@
 {
-  "version": "0.8.6.5",
-  "download_url": "https://github.com/joffrey-d/FreeSmartSync/releases/latest/download/freesmartsync-v0.8.6.5.zip",
-  "notes": "Nouvelle icone premium · Bouton Mises a jour manuel · Animations sync"
+  "version": "0.8.7.6",
+  "download_url": "https://github.com/joffrey-d/FreeSmartSync/archive/refs/heads/development.zip",
+  "notes": "Script .sh : popup inutile supprimee, cp fallback nettoye"
 }

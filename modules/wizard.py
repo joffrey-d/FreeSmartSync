@@ -16,7 +16,17 @@ FONT_SIZE_SMALL   = "font-size:13px;"
 FONT_SIZE_NOTE    = "font-size:12px;"
 
 
+def _set_icon(widget):
+    import os
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    p = os.path.join(base, 'assets', 'icon.png')
+    if os.path.exists(p):
+        from PyQt5 import QtGui
+        widget.setWindowIcon(QtGui.QIcon(p))
+
+
 class WizardWindow(QtWidgets.QDialog):
+    # Icone appliquée dans _build_ui
     """
     Fenêtre principale du wizard — 8 écrans.
     0: Langue
@@ -36,11 +46,14 @@ class WizardWindow(QtWidgets.QDialog):
         self.config = {}
 
         self.setWindowTitle("FreeSmartSync — Installation")
+        _set_icon(self)
         self.setMinimumSize(750, 600)
         self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowContextHelpButtonHint)
-        import os as _os; from PyQt5 import QtGui as _Gui
-        _ip = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "assets", "icon.png")
-        if _os.path.exists(_ip): self.setWindowIcon(_Gui.QIcon(_ip))
+
+        from PyQt5 import QtWidgets as _Qw
+        _app = _Qw.QApplication.instance()
+        if _app and not _app.windowIcon().isNull():
+            self.setWindowIcon(_app.windowIcon())
 
         self.stack = QtWidgets.QStackedWidget()
 
@@ -1061,8 +1074,12 @@ class PageProfiles(QtWidgets.QWidget):
             for name in profiles:
                 self.profile_combo.addItem(f"👤 {name}", name)
             self.opt_existing.setEnabled(True)
+            self.profile_combo.setEnabled(True)
+            # Auto-sélectionner "profil existant" s'il y en a
+            self.opt_existing.setChecked(True)
         else:
             self.opt_existing.setEnabled(False)
+            self.profile_combo.setEnabled(False)
             self.opt_existing.setText(
                 "👤 Utiliser un profil existant (aucun profil enregistré)"
                 if lang == "fr" else

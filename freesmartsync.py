@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# freesmartsync.py — Point d'entrée FreeSmartSync v0.8.6.2
+# freesmartsync.py — Point d'entrée FreeSmartSync v0.8.7.3
 
 import sys
 import os
@@ -7,29 +7,38 @@ import subprocess
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from PyQt5 import QtWidgets, QtGui, QtCore
+try:
+    from PyQt5 import QtWidgets, QtGui, QtCore
+except ImportError:
+    print("ERREUR : PyQt5 n'est pas installé.")
+    print("Relancez le script d'installation : bash CLIC-DROIT-Executer-pour-installer-FreeSmartSync.sh")
+    import subprocess, os
+    # Tenter d'afficher un message graphique si possible
+    msg = "FreeSmartSync — Composant manquant\n\nPyQt5 n'est pas installé.\nRelancez le script d'installation."
+    subprocess.run(["kdialog", "--error", msg], check=False) if os.path.exists("/usr/bin/kdialog") else None
+    subprocess.run(["zenity", "--error", "--text", msg], check=False) if os.path.exists("/usr/bin/zenity") else None
+    sys.exit(1)
 
-from modules.config import load_config, is_first_run
-from modules.wizard import WizardWindow
-from modules.main_window import MainWindow, APP_VERSION
-from modules.updater import check_and_show_update
+try:
+    from modules.config import load_config, is_first_run
+    from modules.wizard import WizardWindow
+    from modules.main_window import MainWindow, APP_VERSION
+    from modules.updater import check_and_show_update
+except Exception as _import_err:
+    print(f"ERREUR import module : {_import_err}")
+    print(f"Répertoire courant : {os.getcwd()}")
+    print(f"sys.path : {sys.path[:3]}")
+    sys.exit(1)
 
+# Chemin icône global
+_ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.png")
 
-
-def _apply_icon(widget):
-    """Applique l'icône FSS à une fenêtre."""
-    import os
-    from PyQt5 import QtGui
-    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.png")
-    if os.path.exists(p):
-        widget.setWindowIcon(QtGui.QIcon(p))
 
 def get_connected_device():
     """Détecte automatiquement le téléphone branché via ADB."""
     try:
         res = subprocess.run(
-            ["adb", "devices"],
-            capture_output=True, text=True, timeout=2
+            ["adb", "devices"], capture_output=True, text=True, timeout=2
         )
         for line in res.stdout.strip().split('\n')[1:]:
             if "\tdevice" in line:
@@ -39,8 +48,20 @@ def get_connected_device():
     return None
 
 
+def _apply_icon(widget):
+    """Applique l'icône FSS via l'icône déjà chargée dans QApplication."""
+    app = QtWidgets.QApplication.instance()
+    if app and not app.windowIcon().isNull():
+        widget.setWindowIcon(app.windowIcon())
+
+
 class ReconnectDialog(QtWidgets.QDialog):
-    """Assistant de reconnexion affiché à chaque relancement."""
+    """
+    Dialogue de lancement :
+    - Sélection du profil (affiché en premier si des profils existent)
+    - Bouton "Lancer" (accès direct à la fenêtre principale)
+    - Bouton "Aide / Nouvel appareil" (ouvre le mini-wizard de reconnexion)
+    """
 
     def __init__(self, lang="fr", parent=None):
         super().__init__(parent)
@@ -50,79 +71,66 @@ class ReconnectDialog(QtWidgets.QDialog):
             if lang == "fr" else
             "FreeSmartSync — New session"
         )
-        self.setMinimumSize(520, 320)
+        self.setMinimumSize(520, 340)
         self.setWindowFlags(
             self.windowFlags() & ~QtCore.Qt.WindowContextHelpButtonHint
         )
         _apply_icon(self)
 
         layout = QtWidgets.QVBoxLayout()
-        layout.setSpacing(16)
+        layout.setSpacing(14)
         layout.setContentsMargins(30, 25, 30, 25)
 
         title = QtWidgets.QLabel(
-            "🔌 Nouvelle session de synchronisation"
-            if lang == "fr" else
-            "🔌 New sync session"
+            "🔌 Quelle session lancer ?" if lang == "fr"
+            else "🔌 Which session to launch?"
         )
         title.setAlignment(QtCore.Qt.AlignCenter)
         title.setStyleSheet(
             "font-size:18px; font-weight:bold; color:#2c3e50;"
         )
 
+        # ── Sélecteur de profil ──────────────────────────
+        from modules.profiles import load_profiles
+        profiles = load_profiles()
+
+        profile_lbl = QtWidgets.QLabel(
+            "👤 Profil à utiliser :" if lang == "fr"
+            else "👤 Profile to use:"
+        )
+        profile_lbl.setStyleSheet("font-size:13px; font-weight:bold; color:#2c3e50;")
+
+        self.profile_combo = QtWidgets.QComboBox()
+        self.profile_combo.setMinimumHeight(34)
+        self.profile_combo.setStyleSheet("font-size:13px; padding:4px;")
+        self.profile_combo.addItem(
+            "— Configuration actuelle —" if lang == "fr"
+            else "— Current config —",
+            None
+        )
+        for name in profiles:
+            self.profile_combo.addItem(f"👤 {name}", name)
+
+        # Si un seul profil, le pré-sélectionner
+        if len(profiles) == 1:
+            self.profile_combo.setCurrentIndex(1)
+
+        # ── Boutons ──────────────────────────────────────
         reminder = QtWidgets.QLabel(
-            "Pour synchroniser votre téléphone, le <b>débogage USB</b> "
-            "doit être activé sur votre smartphone.<br><br>"
-            "Avez-vous besoin d'aide pour l'activer ?"
+            "Le <b>débogage USB</b> doit être activé sur votre téléphone."
             if lang == "fr" else
-            "To sync your phone, <b>USB debugging</b> must be enabled "
-            "on your smartphone.<br><br>"
-            "Do you need help enabling it?"
+            "<b>USB debugging</b> must be enabled on your phone."
         )
         reminder.setWordWrap(True)
         reminder.setAlignment(QtCore.Qt.AlignCenter)
         reminder.setStyleSheet(
-            "font-size:14px; color:#2c3e50; background:#eaf2ff; "
-            "border:2px solid #3498db; border-radius:8px; padding:14px;"
-        )
-
-        # Sélecteur de profil si des profils existent
-        from modules.profiles import load_profiles
-        profiles          = load_profiles()
-        self.profile_combo = None
-
-        if profiles:
-            profile_lbl = QtWidgets.QLabel(
-                "👤 Profil à utiliser :" if lang == "fr"
-                else "👤 Profile to use:"
-            )
-            profile_lbl.setStyleSheet("font-size:13px; font-weight:bold;")
-
-            self.profile_combo = QtWidgets.QComboBox()
-            self.profile_combo.setStyleSheet("font-size:13px; padding:4px;")
-            self.profile_combo.addItem(
-                "— Config actuelle —" if lang == "fr"
-                else "— Current config —",
-                None
-            )
-            for name in profiles:
-                self.profile_combo.addItem(f"👤 {name}", name)
-
-        self.btn_guide = QtWidgets.QPushButton(
-            "🔌 Oui, me guider pour activer le débogage USB"
-            if lang == "fr" else
-            "🔌 Yes, guide me to enable USB debugging"
-        )
-        self.btn_guide.setMinimumHeight(48)
-        self.btn_guide.setStyleSheet(
-            "background-color:#2ecc71; color:white; font-weight:bold; "
-            "font-size:14px; padding:10px; border-radius:6px;"
+            "font-size:12px; color:#555; background:#eaf2ff; "
+            "border:1px solid #aed6f1; border-radius:6px; padding:8px;"
         )
 
         self.btn_direct = QtWidgets.QPushButton(
-            "▶ Non, je sais le faire — Lancer directement"
-            if lang == "fr" else
-            "▶ No, I know how — Launch directly"
+            "▶  Lancer FreeSmartSync" if lang == "fr"
+            else "▶  Launch FreeSmartSync"
         )
         self.btn_direct.setMinimumHeight(48)
         self.btn_direct.setStyleSheet(
@@ -130,24 +138,33 @@ class ReconnectDialog(QtWidgets.QDialog):
             "font-size:14px; padding:10px; border-radius:6px;"
         )
 
-        self.btn_guide.clicked.connect(self.accept)
+        self.btn_guide = QtWidgets.QPushButton(
+            "🔌 Aide — Activer le débogage USB" if lang == "fr"
+            else "🔌 Help — Enable USB debugging"
+        )
+        self.btn_guide.setMinimumHeight(40)
+        self.btn_guide.setStyleSheet(
+            "background-color:#f8f9fa; color:#2c3e50; "
+            "border:1px solid #dee2e6; border-radius:6px; font-size:13px;"
+        )
+
+        # reject → lancer directement (MainWindow)
+        # accept → ouvrir le mini-wizard
         self.btn_direct.clicked.connect(self.reject)
+        self.btn_guide.clicked.connect(self.accept)
 
         layout.addWidget(title)
+        layout.addWidget(profile_lbl)
+        layout.addWidget(self.profile_combo)
         layout.addWidget(reminder)
-        if self.profile_combo:
-            layout.addWidget(profile_lbl)
-            layout.addWidget(self.profile_combo)
-        layout.addSpacing(8)
-        layout.addWidget(self.btn_guide)
+        layout.addSpacing(4)
         layout.addWidget(self.btn_direct)
+        layout.addWidget(self.btn_guide)
         self.setLayout(layout)
 
     def get_selected_profile(self):
         """Retourne le nom du profil sélectionné ou None."""
-        if self.profile_combo:
-            return self.profile_combo.currentData()
-        return None
+        return self.profile_combo.currentData()
 
 
 class MiniWizard(QtWidgets.QDialog):
@@ -269,24 +286,40 @@ class MiniWizard(QtWidgets.QDialog):
 
 
 def main():
+    # Identification Linux pour l'icône dans les fenêtres (StartupWMClass)
+    if sys.platform.startswith("linux"):
+        try:
+            QtCore.QCoreApplication.setApplicationName("freesmartsync")
+        except Exception:
+            pass
+
     app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("FreeSmartSync")
+    app.setApplicationName("freesmartsync")
+    app.setApplicationDisplayName("FreeSmartSync")
     app.setOrganizationName("FreeSmartSync")
     app.setQuitOnLastWindowClosed(False)
 
-    icon_path = os.path.join(os.path.dirname(__file__), "assets", "icon.png")
-    if os.path.exists(icon_path):
-        app.setWindowIcon(QtGui.QIcon(icon_path))
+    # Charger l'icône avec plusieurs résolutions pour KDE
+    if os.path.exists(_ICON_PATH):
+        _app_icon = QtGui.QIcon(_ICON_PATH)
+        extra = os.path.join(os.path.dirname(_ICON_PATH), "icon_256.png")
+        if os.path.exists(extra):
+            _app_icon.addFile(extra)
+        app.setWindowIcon(_app_icon)
+        QtWidgets.QApplication.setWindowIcon(_app_icon)
 
     config = load_config()
 
+    # ── Premier lancement (pas de config) → wizard complet ──
     if is_first_run():
         wizard = WizardWindow()
         wizard.wizard_done.connect(lambda cfg: launch_main(app, cfg))
         if wizard.exec_() != QtWidgets.QDialog.Accepted:
             sys.exit(0)
+
+    # ── Lancement normal → ReconnectDialog avec profils ──
     else:
-        # Détection automatique du téléphone branché
+        # Détection automatique du téléphone
         device = get_connected_device()
         if device:
             config["device_id"] = device
@@ -295,7 +328,7 @@ def main():
         dlg  = ReconnectDialog(lang=lang)
         result = dlg.exec_()
 
-        # Appliquer le profil sélectionné si nécessaire
+        # Appliquer le profil sélectionné
         profile_name = dlg.get_selected_profile()
         if profile_name:
             from modules.profiles import get_profile
@@ -303,6 +336,7 @@ def main():
             config["active_profile"] = profile_name
 
         if result == QtWidgets.QDialog.Accepted:
+            # Bouton "Aide" → MiniWizard
             mini     = MiniWizard(config, lang=lang)
             launched = [False]
 
@@ -316,6 +350,7 @@ def main():
             if not launched[0]:
                 launch_main(app, config)
         else:
+            # Bouton "Lancer" → direct
             launch_main(app, config)
 
     sys.exit(app.exec_())

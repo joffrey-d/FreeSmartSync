@@ -4,6 +4,14 @@ import subprocess
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 from modules.i18n import t
+
+
+def _set_icon(widget):
+    import os
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    p = os.path.join(base, "assets", "icon.png")
+    if os.path.exists(p):
+        widget.setWindowIcon(QtGui.QIcon(p))
 from modules.config import save_config, load_config
 from modules.worker import Worker
 from modules.dialogs import DeleteConfirmDialog, SummaryDialog, PreviewDialog, PreviewDialog
@@ -22,7 +30,7 @@ def _set_app_icon(widget):
     if os.path.exists(icon_path):
         widget.setWindowIcon(QtGui.QIcon(icon_path))
 
-APP_VERSION = "v0.8.6.5"
+APP_VERSION = "v0.8.7.6"
 
 
 class AboutDialog(QtWidgets.QDialog):
@@ -30,11 +38,15 @@ class AboutDialog(QtWidgets.QDialog):
 
     def __init__(self, lang="fr", device_id=None, parent=None):
         super().__init__(parent)
+        _set_icon(self)
         self.setWindowTitle(
             f"À propos — FreeSmartSync {APP_VERSION}" if lang == "fr"
             else f"About — FreeSmartSync {APP_VERSION}"
         )
-        _set_app_icon(self)
+        from PyQt5 import QtWidgets as _Qw
+        _app = _Qw.QApplication.instance()
+        if _app and not _app.windowIcon().isNull():
+            self.setWindowIcon(_app.windowIcon())
         self.setMinimumSize(560, 580)
 
         scroll = QtWidgets.QScrollArea()
@@ -160,7 +172,13 @@ class AboutDialog(QtWidgets.QDialog):
                 "sur la base des spécifications et retours de Joffrey.</span><br><br>"
                 "<b style='font-size:14px'>📜 Licence : GPL v3</b><br>"
                 "<span style='font-size:13px; color:#555;'>"
-                "Logiciel libre et open source — code source disponible et auditable.</span>"
+                "Logiciel libre et open source — code source disponible et auditable.</span><br><br>"
+                "<b style='font-size:14px'>📬 Contact & Liens</b><br>"
+                "<span style='font-size:13px;'>"
+                "✉️ <a href='mailto:freesmartsync@free.fr'>freesmartsync@free.fr</a><br>"
+                "🌐 <a href='https://joffrey-d.github.io/FreeSmartSync/'>Site web FreeSmartSync</a><br>"
+                "💻 <a href='https://github.com/joffrey-d/FreeSmartSync'>GitHub — Code source</a>"
+                "</span>"
             )
         else:
             credits_html = (
@@ -174,11 +192,22 @@ class AboutDialog(QtWidgets.QDialog):
                 "based on Joffrey's specifications and feedback.</span><br><br>"
                 "<b style='font-size:14px'>📜 License: GPL v3</b><br>"
                 "<span style='font-size:13px; color:#555;'>"
-                "Free and open source software — source code available and auditable.</span>"
+                "Free and open source software — source code available and auditable.</span><br><br>"
+                "<b style='font-size:14px'>📬 Contact & Links</b><br>"
+                "<span style='font-size:13px;'>"
+                "✉️ <a href='mailto:freesmartsync@free.fr'>freesmartsync@free.fr</a><br>"
+                "🌐 <a href='https://joffrey-d.github.io/FreeSmartSync/'>FreeSmartSync website</a><br>"
+                "💻 <a href='https://github.com/joffrey-d/FreeSmartSync'>GitHub — Source code</a>"
+                "</span>"
             )
-        credits_lbl = QtWidgets.QLabel(credits_html)
-        credits_lbl.setWordWrap(True)
-        credits_lbl.setStyleSheet("font-size:13px; padding:4px;")
+        credits_lbl = QtWidgets.QTextBrowser()
+        credits_lbl.setHtml(credits_html)
+        credits_lbl.setOpenExternalLinks(True)
+        credits_lbl.setOpenLinks(True)
+        credits_lbl.setMaximumHeight(220)
+        credits_lbl.setStyleSheet(
+            "font-size:13px; padding:4px; border:none; background:transparent;"
+        )
         credits_layout.addWidget(credits_lbl)
         credits_group.setLayout(credits_layout)
 
@@ -813,18 +842,53 @@ class MainWindow(QtWidgets.QWidget):
         dlg.exec_()
 
     def _check_update_manual(self):
-        """Vérifie manuellement les mises à jour."""
-        from modules.updater import check_and_show_update
+        """Vérifie manuellement les mises à jour — appel synchrone avec feedback immédiat."""
+        from modules.updater import check_update_available, UpdateDialog
         lang = self.lang
-        found = check_and_show_update(APP_VERSION, lang=lang, parent=self, silent=False)
-        if not found:
-            QtWidgets.QMessageBox.information(
-                self,
-                "✅ À jour" if lang == "fr" else "✅ Up to date",
-                f"FreeSmartSync {APP_VERSION} est la dernière version disponible."
-                if lang == "fr" else
-                f"FreeSmartSync {APP_VERSION} is the latest version available."
-            )
+
+        # Afficher un indicateur de chargement
+        self.update_btn.setEnabled(False)
+        self.update_btn.setText("🔄 Vérification..." if lang == "fr" else "🔄 Checking...")
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            result = check_update_available(APP_VERSION)
+            available = result[0]
+            latest    = result[1] if len(result) > 1 else None
+            url       = result[2] if len(result) > 2 else None
+            notes     = result[3] if len(result) > 3 else ""
+
+            if available and latest and url:
+                dlg = UpdateDialog(
+                    current_version=APP_VERSION,
+                    latest_version=latest,
+                    download_url=url,
+                    notes=notes or "",
+                    lang=lang,
+                    parent=self
+                )
+                dlg.exec_()
+            elif latest is None:
+                # Erreur réseau
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "⚠️ Erreur réseau" if lang == "fr" else "⚠️ Network error",
+                    "Impossible de joindre le serveur de mises à jour.\n"
+                    "Vérifiez votre connexion internet."
+                    if lang == "fr" else
+                    "Cannot reach the update server.\nCheck your internet connection."
+                )
+            else:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "✅ À jour" if lang == "fr" else "✅ Up to date",
+                    f"FreeSmartSync {APP_VERSION} est déjà la dernière version."
+                    if lang == "fr" else
+                    f"FreeSmartSync {APP_VERSION} is already the latest version."
+                )
+        finally:
+            self.update_btn.setEnabled(True)
+            self.update_btn.setText("🔔 Mises à jour" if lang == "fr" else "🔔 Updates")
 
     def show_about(self):
         device_id = self._get_current_device_id() or None

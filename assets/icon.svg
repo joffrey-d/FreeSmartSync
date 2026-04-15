@@ -1,60 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="bg" x1="15%" y1="0%" x2="85%" y2="100%">
-      <stop offset="0%" stop-color="#34d399"/>
-      <stop offset="45%" stop-color="#059669"/>
-      <stop offset="100%" stop-color="#064e3b"/>
-    </linearGradient>
-    <radialGradient id="shine" cx="38%" cy="28%" r="55%">
-      <stop offset="0%" stop-color="rgba(255,255,255,0.18)"/>
-      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    <radialGradient id="g3" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" style="stop-color:#2ecc71"/>
+      <stop offset="100%" style="stop-color:#16a34a"/>
     </radialGradient>
   </defs>
-
-  <!-- Fond -->
-  <circle cx="256" cy="256" r="256" fill="url(#bg)"/>
-  <circle cx="256" cy="256" r="256" fill="url(#shine)"/>
-
-  <!-- ═══ FLÈCHE 1 : arc supérieur blanc (Tel→PC) ═══
-       Arc de -210° à 30° (240° d'arc), pointe à droite-bas
-       Dessiné comme UN seul tracé fermé : bord ext > bord int > pointe -->
-  <!-- Rayon ext=210, int=172, épaisseur=38 -->
-  <path d="
-    M 62 198
-    A 210 210 0 1 1 420 338
-    L 386 376
-    A 172 172 0 1 0 96 228
-    Z"
-    fill="white" opacity="0.96"/>
-
-  <!-- ═══ FLÈCHE 2 : arc inférieur semi-transparent (PC→Tel) ═══
-       Arc retour plus petit, pointe à gauche -->
-  <path d="
-    M 416 296
-    A 170 100 10 0 1 134 322
-    L 108 290
-    A 138 78 10 0 0 390 264
-    Z"
-    fill="rgba(255,255,255,0.45)"/>
-
-  <!-- ═══ SMARTPHONE centré ═══ -->
-  <!-- Corps -->
-  <rect x="206" y="170" width="100" height="172" rx="17" fill="white" opacity="0.97"/>
-  <!-- Reflet gauche -->
-  <rect x="206" y="170" width="32" height="172" rx="17" fill="rgba(255,255,255,0.18)"/>
-  <!-- Écran -->
-  <rect x="218" y="185" width="76" height="132" rx="9" fill="#064e3b"/>
-  <!-- Encoche -->
-  <rect x="236" y="175" width="40" height="6" rx="3" fill="#d1d5db"/>
-  <!-- Bouton home -->
-  <circle cx="256" cy="330" r="9" fill="#d1d5db"/>
-
-  <!-- Mini sync sur écran -->
-  <!-- Arc haut blanc -->
-  <path d="M 235 234 A 21 21 0 0 1 277 234 L 268 218 M 277 234 L 283 220" 
-        fill="none" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- Arc bas transparent -->
-  <path d="M 277 270 A 21 21 0 0 1 235 270 L 244 286 M 235 270 L 229 284"
-        fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="5"
-        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="256" cy="256" r="256" fill="url(#g3)"/>
+  <!-- Flèche haut : arc blanc épais, 160° -->
+  <path d="M 144 160 A 148 148 0 0 1 368 160"
+        fill="none" stroke="white" stroke-width="38" stroke-linecap="round"
+        opacity="0.95"/>
+  <!-- Pointe flèche haut -->
+  <polygon points="368,160 350,108 404,128" fill="white" opacity="0.95"/>
+  <!-- Flèche bas : arc blanc semi-transparent, 160° -->
+  <path d="M 368 352 A 148 148 0 0 1 144 352"
+        fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="38" stroke-linecap="round"/>
+  <!-- Pointe flèche bas -->
+  <polygon points="144,352 162,404 108,384" fill="rgba(255,255,255,0.6)"/>
+  <!-- Smartphone centré, design épuré -->
+  <rect x="206" y="175" width="100" height="162" rx="16" fill="white"/>
+  <rect x="216" y="188" width="80" height="122" rx="8" fill="#16a34a"/>
+  <!-- Bouton home rond -->
+  <circle cx="256" cy="324" r="9" fill="#e8e8e8"/>
+  <!-- Encoche haut -->
+  <rect x="236" y="179" width="40" height="6" rx="3" fill="#e0e0e0"/>
+  <!-- Flèches sur écran -->
+  <path d="M232 228 Q256 218 280 228" fill="none" stroke="white" stroke-width="5" stroke-linecap="round"/>
+  <polygon points="280,228 268,214 284,218" fill="white"/>
+  <path d="M280 272 Q256 282 232 272" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="5" stroke-linecap="round"/>
+  <polygon points="232,272 244,286 228,282" fill="rgba(255,255,255,0.7)"/>
 </svg>

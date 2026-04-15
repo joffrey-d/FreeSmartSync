@@ -220,22 +220,35 @@ if [ -d "$INSTALL_DIR" ] || [ -f "$DESKTOP_FILE" ]; then
 Les fichiers vont être mis à jour.
 Votre configuration sera conservée." \
 "$APP_NAME — Réinstallation"
-            rm -rf "$INSTALL_DIR"
+            [ -n "$INSTALL_DIR" ] && [ "$INSTALL_DIR" != "/" ] && rm -rf "$INSTALL_DIR"
             rm -f "$DESKTOP_FILE"
             ;;
         uninstall)
+            # OUI = conserver la config (comportement par defaut le plus sur)
+            # NON = tout supprimer
             popup_question \
-"Voulez-vous également supprimer votre configuration ?
-(dossiers sélectionnés, répertoire de sauvegarde)" \
-"$APP_NAME — Désinstallation"
+"Voulez-vous conserver votre configuration et vos profils ?
+
+OUI : configuration et profils conserves.
+      Retrouves automatiquement a la reinstallation.
+
+NON : tout sera supprime definitivement." \
+"$APP_NAME - Desinstallation"
             if [ $? -eq 0 ]; then
-                rm -rf "$HOME/.config/freesmartsync"
-                popup_info "✅ FreeSmartSync et sa configuration ont été supprimés." "$APP_NAME"
+                # OUI = conserver : on ne touche PAS a config.json
+                # L'application retrouvera son etat exact (setup_done=True, profils intacts)
+                popup_info "FreeSmartSync desinstalle.
+Configuration et profils conserves.
+Ils seront retrouves automatiquement a la reinstallation." "$APP_NAME"
             else
-                popup_info "✅ FreeSmartSync a été désinstallé.\nConfiguration conservée." "$APP_NAME"
+                # NON = tout supprimer
+                rm -rf "$HOME/.config/freesmartsync"
+                popup_info "FreeSmartSync et sa configuration ont ete supprimes." "$APP_NAME"
             fi
-            rm -rf "$INSTALL_DIR"
+            [ -n "$INSTALL_DIR" ] && [ "$INSTALL_DIR" != "/" ] && rm -rf "$INSTALL_DIR"
             rm -f "$DESKTOP_FILE"
+            rm -f "$HOME/Bureau/FreeSmartSync.desktop" 2>/dev/null || true
+            rm -f "$HOME/Desktop/FreeSmartSync.desktop" 2>/dev/null || true
             update-desktop-database "$HOME/.local/share/applications/" 2>/dev/null || true
             exit 0
             ;;
@@ -290,42 +303,59 @@ Continuer ?" \
         exit 0
     fi
 
-    # Demande mot de passe
-    PASSWORD=$(popup_password \
-"Entrez votre mot de passe administrateur :" \
-"$APP_NAME — Authentification")
-
-    if [ -z "$PASSWORD" ]; then
-        popup_error "Mot de passe requis pour l'installation." "$APP_NAME"
-        exit 1
-    fi
-
-    # Installation — barre de progression indéterminée en arrière-plan
+    # ── Installation sécurisée des dépendances ──────────────────────────────────
+    # Méthode 1 : pkexec (Polkit) — ouvre la fenêtre native du système, gère
+    #             sudo ET su selon la distro. Aucun mot de passe en mémoire.
+    # Méthode 2 : su -c — fallback pour Mageia/urpmi (utilisateur non sudoer)
+    # Méthode 3 : sudo — fallback classique
+    # ─────────────────────────────────────────────────────────────────────────
     INSTALL_LOG=$(mktemp)
 
-    case "$GUI" in
-        kdialog)
-            # Lancer une barre indéterminée kdialog
-            kdialog --title "$APP_NAME" --progressbar "Installation des outils nécessaires..." 0 &
-            KDIALOG_PID=$!
-            echo "$PASSWORD" | sudo -S $INSTALL_CMD > "$INSTALL_LOG" 2>&1
+    INSTALL_STATUS=1
+
+    # ── Stratégie selon la distribution ──────────────────────────────────────
+    # Mageia : su -c en direct (l'user n'est pas sudoer, pkexec ne trouve pas urpmi)
+    # Autres : pkexec d'abord (fenêtre native Polkit), puis sudo en fallback
+    # ─────────────────────────────────────────────────────────────────────────
+
+    if is_mageia_based "$DISTRIB_INFO"; then
+        # Mageia / OpenMandriva : su -c avec mot de passe root
+        if [ "$GUI" = "kdialog" ]; then
+            ROOT_PASS=$(kdialog --title "$APP_NAME — Mot de passe root"                 --password "Entrez le mot de passe root pour installer les dependances :")
+        else
+            ROOT_PASS=$(zenity --password                 --title="$APP_NAME — Mot de passe root" 2>/dev/null)
+        fi
+        if [ -n "$ROOT_PASS" ]; then
+            echo "$ROOT_PASS" | su -c "urpmi --auto android-tools python3 python3-pyqt5"                 > "$INSTALL_LOG" 2>&1
             INSTALL_STATUS=$?
-            kill $KDIALOG_PID 2>/dev/null || true
-            ;;
-        zenity|qarma)
-            # Pipe vers zenity --pulsate (indéterminé)
-            (echo "$PASSWORD" | sudo -S $INSTALL_CMD > "$INSTALL_LOG" 2>&1; echo "DONE") |             zenity --progress                 --title="$APP_NAME"                 --text="Installation des outils nécessaires..."                 --pulsate                 --auto-close                 --width=400 &
-            # Attendre la fin réelle de l'installation
-            wait
-            INSTALL_STATUS=$(cat "$INSTALL_LOG.status" 2>/dev/null || echo 0)
-            echo "$PASSWORD" | sudo -S $INSTALL_CMD >> "$INSTALL_LOG" 2>&1
+        fi
+        unset ROOT_PASS
+    else
+        # Méthode 1 : pkexec (Polkit) — universel sur Fedora/Ubuntu/Zorin
+        if command -v pkexec &>/dev/null; then
+            pkexec bash -c "$INSTALL_CMD" > "$INSTALL_LOG" 2>&1
             INSTALL_STATUS=$?
-            ;;
-        *)
-            echo "$PASSWORD" | sudo -S $INSTALL_CMD > "$INSTALL_LOG" 2>&1
-            INSTALL_STATUS=$?
-            ;;
-    esac
+            # Vérifier que l'installation a vraiment marché (pkexec peut retourner 0
+            # même si la commande n'a rien fait)
+            if [ $INSTALL_STATUS -eq 0 ]; then
+                python3 -c "import PyQt5" 2>/dev/null || INSTALL_STATUS=99
+            fi
+        fi
+
+        # Méthode 2 : sudo (fallback si pkexec absent ou insuffisant)
+        if [ $INSTALL_STATUS -ne 0 ]; then
+            if [ "$GUI" = "kdialog" ]; then
+                SUDO_PASS=$(kdialog --title "$APP_NAME — Authentification"                     --password "Entrez votre mot de passe administrateur :")
+            else
+                SUDO_PASS=$(zenity --password                     --title="$APP_NAME — Authentification" 2>/dev/null)
+            fi
+            if [ -n "$SUDO_PASS" ]; then
+                echo "$SUDO_PASS" | sudo -S bash -c "$INSTALL_CMD"                     > "$INSTALL_LOG" 2>&1
+                INSTALL_STATUS=$?
+            fi
+            unset SUDO_PASS
+        fi
+    fi
 
     if [ $INSTALL_STATUS -ne 0 ]; then
         popup_error \
@@ -356,38 +386,51 @@ else
     SOURCE_DIR="$SCRIPT_DIR"
 fi
 
-# Copie avec rsync si disponible, sinon cp
+# Copie avec rsync si disponible, sinon cp puis nettoyage
 if command -v rsync &>/dev/null; then
     rsync -a --exclude="*.sh" --exclude="*.desktop" "$SOURCE_DIR/" "$INSTALL_DIR/"
 else
     cp -r "$SOURCE_DIR/." "$INSTALL_DIR/"
+    # Nettoyer les fichiers d'installation du répertoire cible
+    rm -f "$INSTALL_DIR/"*.sh "$INSTALL_DIR/Double-clic"*.desktop 2>/dev/null || true
 fi
 
 chmod +x "$INSTALL_DIR/freesmartsync.py"
 
-# Icône PNG déjà incluse dans le zip — aucune génération nécessaire
+# Icône PNG déjà incluse dans le zip
+# Installer aussi dans XDG icon dirs pour que KDE/GNOME affiche l'icône dans les fenêtres
+XDG_ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+mkdir -p "$XDG_ICON_DIR"
+cp "$INSTALL_DIR/assets/icon.png" "$XDG_ICON_DIR/freesmartsync.png"
+# Mettre à jour le cache d'icônes
+gtk-update-icon-cache "$HOME/.local/share/icons/hicolor/" 2>/dev/null || true
+kbuildsycoca5 --noincremental 2>/dev/null || true  # KDE Plasma 5
+kbuildsycoca6 --noincremental 2>/dev/null || true  # KDE Plasma 6
 
 # Création raccourci menu
 mkdir -p "$(dirname "$DESKTOP_FILE")"
-cat > "$DESKTOP_FILE" << EOF
+cat > "$DESKTOP_FILE" << DEOF
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=FreeSmartSync
 GenericName=Sauvegarde Android
 Comment=Synchronisation bidirectionnelle Android ↔ Linux
-Exec=bash -c "cd \"$INSTALL_DIR\" && exec python3 freesmartsync.py"
-Icon=$INSTALL_DIR/assets/icon.png
+Exec=python3 "${INSTALL_DIR}/freesmartsync.py"
+Icon=${INSTALL_DIR}/assets/icon.png
 Terminal=false
 Categories=Utility;FileManager;
 Keywords=android;sync;backup;adb;sauvegarde;telephone;
 StartupNotify=true
-EOF
+StartupWMClass=freesmartsync
+DEOF
 
 chmod +x "$DESKTOP_FILE"
 
 # Créer aussi un lanceur sur le Bureau (Desktop) si disponible
-DESKTOP_DIR="$HOME/Bureau"
+# xdg-user-dir est universel et gère Bureau/Desktop/Escritorio selon la locale
+DESKTOP_DIR=$(xdg-user-dir DESKTOP 2>/dev/null)
+[ -z "$DESKTOP_DIR" ] && DESKTOP_DIR="$HOME/Bureau"
 [ ! -d "$DESKTOP_DIR" ] && DESKTOP_DIR="$HOME/Desktop"
 [ ! -d "$DESKTOP_DIR" ] && DESKTOP_DIR=""
 
@@ -395,8 +438,18 @@ if [ -n "$DESKTOP_DIR" ]; then
     LAUNCHER="$DESKTOP_DIR/FreeSmartSync.desktop"
     cp "$DESKTOP_FILE" "$LAUNCHER"
     chmod +x "$LAUNCHER"
-    # Sur GNOME/Zorin, marquer le .desktop comme "trusted"
+    # Marquer comme exécutable/trusted selon le DE
+    # GNOME / Zorin / Ubuntu
     gio set "$LAUNCHER" metadata::trusted true 2>/dev/null || true
+    # Nautilus (GNOME Files)
+    dbus-send --session --print-reply         --dest=org.gnome.Nautilus /org/gnome/Nautilus         org.freedesktop.FileManager1.ShowItems         array:string:"file://$LAUNCHER" string:"" 2>/dev/null || true
+    # Cinnamon / Nemo
+    if command -v nemo-action >/dev/null 2>&1 || [ "$XDG_CURRENT_DESKTOP" = "X-Cinnamon" ]; then
+        gio set "$LAUNCHER" metadata::trusted true 2>/dev/null || true
+    fi
+    # KDE Plasma : mettre à jour le cache sycoca pour reconnaissance icône
+    kbuildsycoca5 --noincremental 2>/dev/null || true
+    kbuildsycoca6 --noincremental 2>/dev/null || true
 fi
 
 # Mise à jour base applications

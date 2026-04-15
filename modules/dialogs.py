@@ -129,6 +129,15 @@ def _get_thumb(path):
     return _get_file_icon(ext), "icon"
 
 
+def _set_icon(widget):
+    import os
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    p = os.path.join(base, 'assets', 'icon.png')
+    if os.path.exists(p):
+        from PyQt5 import QtGui
+        widget.setWindowIcon(QtGui.QIcon(p))
+
+
 class FileGrid(QtWidgets.QWidget):
     """Grille de miniatures scrollable."""
 
@@ -239,6 +248,7 @@ class PreviewDialog(QtWidgets.QDialog):
             if lang == "fr" else
             "🔍 Sync preview"
         )
+        _set_icon(self)
         self.setMinimumSize(820, 580)
 
         layout = QtWidgets.QVBoxLayout()
@@ -491,10 +501,13 @@ class SummaryDialog(QtWidgets.QDialog):
     def __init__(self, summary, base_path=None, lang="fr", parent=None):
         super().__init__(parent)
         self.setWindowTitle(t("summary_title", lang))
+        _set_icon(self)
         self.setMinimumSize(860, 620)
-        import os as _os; from PyQt5 import QtGui as _Gui
-        _ip = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "assets", "icon.png")
-        if _os.path.exists(_ip): self.setWindowIcon(_Gui.QIcon(_ip))
+
+        from PyQt5 import QtWidgets as _Qw
+        _app = _Qw.QApplication.instance()
+        if _app and not _app.windowIcon().isNull():
+            self.setWindowIcon(_app.windowIcon())
 
         layout = QtWidgets.QVBoxLayout()
         layout.setSpacing(10)
