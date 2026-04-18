@@ -1,9 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Installer-FreeSmartSync.sh
 # Installation graphique FreeSmartSync — double-clic et c'est parti !
 # Aucun terminal nécessaire.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# S'assurer que les scripts sont exécutables (perms parfois perdues à l'extraction)
+chmod +x "$SCRIPT_DIR/CLIC-DROIT-Executer-pour-installer-FreeSmartSync.sh" 2>/dev/null || true
+chmod +x "$SCRIPT_DIR/freesmartsync.py" 2>/dev/null || true
 INSTALL_DIR="$HOME/.local/share/freesmartsync"
 DESKTOP_FILE="$HOME/.local/share/applications/freesmartsync.desktop"
 APP_NAME="FreeSmartSync"
@@ -71,41 +74,83 @@ popup_password() {
     esac
 }
 
-# Barre de progression — retourne le PID du processus
-start_progress() {
+# ─ Barre de progression — logique séparée zenity vs kdialog ───
+#
+# ZENITY  : lit stdin via FIFO → envoyer "50", "# message", "100"
+#           → --auto-close se déclenche sur 100 : fermeture propre
+#
+# KDIALOG : utilise DBus, ignore stdin → FIFO inutile ici
+#           → on le lance en arrière-plan et on le tue (kill) à la fin
+#           → c'est la seule méthode fiable sur KDE Plasma
+# ───────────────────────────────────────────────────────────────
+_FIFO=""
+_KDIALOG_PID=""
+
+open_progress() {
     local title="$1"
     local msg="$2"
     case "$GUI" in
         kdialog)
-            DBUS_REF=$(kdialog --title "$title" --progressbar "$msg" 5 2>/dev/null)
-            echo "kdialog:$DBUS_REF"
+            # KDE : lancer en arrière-plan, tuer avec kill à close_progress
+            kdialog --title "$title" --progressbar "$msg" 0 &
+            _KDIALOG_PID=$!
             ;;
         zenity|qarma)
-            (
-                echo "10"; sleep 1
-                echo "30"; sleep 1
-                echo "60"; sleep 1
-                echo "90"; sleep 1
-                echo "100"
-            ) | zenity --progress \
+            # GNOME/Cinnamon : FIFO → stdin → auto-close sur 100
+            _FIFO=$(mktemp -u /tmp/fss_prog_XXXXXX)
+            mkfifo "$_FIFO"
+            zenity --progress \
                 --title="$title" \
                 --text="$msg" \
                 --percentage=0 \
                 --auto-close \
-                --width=400 &
-            echo "zenity:$!"
+                --no-cancel \
+                --width=420 < "$_FIFO" &
+            exec 9>"$_FIFO"
             ;;
-        none) echo "none:0" ;;
+    esac
+}
+
+step_progress() {
+    local pct="$1"
+    local msg="${2:-}"
+    case "$GUI" in
+        zenity|qarma)
+            [ -n "$msg" ] && echo "# $msg" >&9 2>/dev/null || true
+            echo "$pct" >&9 2>/dev/null || true
+            ;;
+        kdialog)
+            # kdialog DBus : pas de mise à jour de pourcentage nécessaire
+            # la barre est indéterminée (0), elle s'anime toute seule
+            true
+            ;;
     esac
 }
 
 close_progress() {
-    local ref="$1"
-    local tool="${ref%%:*}"
-    local pid="${ref##*:}"
-    if [ "$tool" = "kdialog" ] && [ -n "$pid" ]; then
-        qdbus $pid /ProgressDialog close 2>/dev/null || true
-    fi
+    case "$GUI" in
+        zenity|qarma)
+            # Envoyer 100 → auto-close → fermeture propre
+            echo "100" >&9 2>/dev/null || true
+            exec 9>&- 2>/dev/null || true
+            [ -n "$_FIFO" ] && rm -f "$_FIFO" 2>/dev/null || true
+            sleep 0.3
+            ;;
+        kdialog)
+            # KDE : tuer directement le processus kdialog
+            [ -n "$_KDIALOG_PID" ] && kill "$_KDIALOG_PID" 2>/dev/null || true
+            wait "$_KDIALOG_PID" 2>/dev/null || true
+            ;;
+    esac
+    # Sécurité finale
+    pkill -f "zenity --progress" 2>/dev/null || true
+    pkill -f "kdialog --progressbar" 2>/dev/null || true
+}
+
+# Alias de compatibilité
+start_progress() {
+    open_progress "$1" "$2"
+    echo "compat:0"
 }
 
 # ─────────────────────────────────────────────
@@ -158,9 +203,11 @@ get_install_cmd() {
     elif is_suse_based "$distrib"; then
         echo "zypper install -y android-tools python3 python3-qt5"
     elif is_mageia_based "$distrib"; then
-        echo "urpmi android-tools python3 python3-pyqt5"
+        echo "urpmi android-tools python3 python3-qt5"
     elif echo "$distrib" | grep -qiE "nixos|glf"; then
-        echo "nix-env -iA nixpkgs.android-tools nixpkgs.python3 nixpkgs.python3Packages.pyqt5"
+        # GLF-OS/NixOS : on utilise nix-env -iA avec le channel courant
+        # Plusieurs tentatives car le nom du paquet PyQt5 varie selon la version
+        echo ""  # GLF-OS géré directement dans le bloc dinstallation
     else
         echo ""
     fi
@@ -186,7 +233,8 @@ check_deps() {
 # Détection si déjà installé
 # ─────────────────────────────────────────────
 
-if [ -d "$INSTALL_DIR" ] || [ -f "$DESKTOP_FILE" ]; then
+# Détection installation existante (chemin entre guillemets pour espaces)
+if [ -d "$INSTALL_DIR" ] || [ -f "$DESKTOP_FILE" ] || [ -f "$HOME/.local/share/applications/freesmartsync.desktop" ]; then
 
     case "$GUI" in
         kdialog)
@@ -224,32 +272,56 @@ Votre configuration sera conservée." \
             rm -f "$DESKTOP_FILE"
             ;;
         uninstall)
-            # OUI = conserver la config (comportement par defaut le plus sur)
-            # NON = tout supprimer
-            popup_question \
-"Voulez-vous conserver votre configuration et vos profils ?
-
-OUI : configuration et profils conserves.
-      Retrouves automatiquement a la reinstallation.
-
-NON : tout sera supprime definitivement." \
-"$APP_NAME - Desinstallation"
-            if [ $? -eq 0 ]; then
-                # OUI = conserver : on ne touche PAS a config.json
-                # L'application retrouvera son etat exact (setup_done=True, profils intacts)
-                popup_info "FreeSmartSync desinstalle.
-Configuration et profils conserves.
-Ils seront retrouves automatiquement a la reinstallation." "$APP_NAME"
-            else
-                # NON = tout supprimer
-                rm -rf "$HOME/.config/freesmartsync"
-                popup_info "FreeSmartSync et sa configuration ont ete supprimes." "$APP_NAME"
+            # ── Lire le chemin de sauvegarde configuré ──
+            SAVE_DIR=""
+            CFG="$HOME/.config/freesmartsync/config.json"
+            if [ -f "$CFG" ]; then
+                SAVE_DIR=$(python3 -c "
+import json,os
+try:
+    d=json.load(open('$CFG'))
+    print(d.get('local_base',''))
+except: pass
+" 2>/dev/null)
             fi
+            SAVE_INFO=""
+            [ -n "$SAVE_DIR" ] && SAVE_INFO="
+⚠️  Répertoire de sauvegarde : $SAVE_DIR
+    (vos fichiers synchronisés — NON supprimé)"
+
+            # ── Question 1 : conserver config + profils ? ──
+            popup_question "Désinstallation de FreeSmartSync
+
+Ce qui sera TOUJOURS supprimé :
+  • L'application et ses fichiers
+  • Les raccourcis (menu + Bureau)
+$SAVE_INFO
+
+Voulez-vous CONSERVER votre configuration et vos profils ?
+
+OUI → profils et paramètres conservés (retrouvés à la réinstallation)
+NON → tout est supprimé définitivement" "$APP_NAME — Désinstallation"
+            KEEP_CONFIG=$?
+
+            if [ $KEEP_CONFIG -eq 0 ]; then
+                popup_info "Les profils et paramètres seront conservés dans :
+$HOME/.config/freesmartsync/" "$APP_NAME"
+            else
+                rm -rf "$HOME/.config/freesmartsync"
+            fi
+
+            # ── Suppression de l'application ──
             [ -n "$INSTALL_DIR" ] && [ "$INSTALL_DIR" != "/" ] && rm -rf "$INSTALL_DIR"
             rm -f "$DESKTOP_FILE"
             rm -f "$HOME/Bureau/FreeSmartSync.desktop" 2>/dev/null || true
             rm -f "$HOME/Desktop/FreeSmartSync.desktop" 2>/dev/null || true
+            rm -f "$HOME/.local/share/icons/hicolor/256x256/apps/freesmartsync.png" 2>/dev/null || true
             update-desktop-database "$HOME/.local/share/applications/" 2>/dev/null || true
+
+            popup_info "✅ FreeSmartSync a été désinstallé.
+
+Note : ADB et Python ne sont pas supprimés
+(ils peuvent être utilisés par d'autres logiciels)." "$APP_NAME"
             exit 0
             ;;
         *)
@@ -314,11 +386,24 @@ Continuer ?" \
     INSTALL_STATUS=1
 
     # ── Stratégie selon la distribution ──────────────────────────────────────
+    # GLF-OS/NixOS : nix-env avec tentative de plusieurs noms de paquets
     # Mageia : su -c en direct (l'user n'est pas sudoer, pkexec ne trouve pas urpmi)
     # Autres : pkexec d'abord (fenêtre native Polkit), puis sudo en fallback
     # ─────────────────────────────────────────────────────────────────────────
 
-    if is_mageia_based "$DISTRIB_INFO"; then
+    if echo "$DISTRIB_INFO" | grep -qiE "nixos|glf"; then
+        # Nix : essayer plusieurs variantes du paquet PyQt5
+        for NIX_QT in "python3Packages.pyqt5" "python39Packages.pyqt5" "python310Packages.pyqt5" "python311Packages.pyqt5"; do
+            if nix-env -iA "nixpkgs.$NIX_QT" > "$INSTALL_LOG" 2>&1; then
+                INSTALL_STATUS=0
+                break
+            fi
+        done
+        # Installer ADB séparément (nom stable)
+        if [ $INSTALL_STATUS -eq 0 ]; then
+            nix-env -iA nixpkgs.android-tools nixpkgs.python3 >> "$INSTALL_LOG" 2>&1 || true
+        fi
+    elif is_mageia_based "$DISTRIB_INFO"; then
         # Mageia / OpenMandriva : su -c avec mot de passe root
         if [ "$GUI" = "kdialog" ]; then
             ROOT_PASS=$(kdialog --title "$APP_NAME — Mot de passe root"                 --password "Entrez le mot de passe root pour installer les dependances :")
@@ -326,7 +411,7 @@ Continuer ?" \
             ROOT_PASS=$(zenity --password                 --title="$APP_NAME — Mot de passe root" 2>/dev/null)
         fi
         if [ -n "$ROOT_PASS" ]; then
-            echo "$ROOT_PASS" | su -c "urpmi --auto android-tools python3 python3-pyqt5"                 > "$INSTALL_LOG" 2>&1
+            echo "$ROOT_PASS" | su -c "urpmi --auto android-tools python3 python3-qt5"                 > "$INSTALL_LOG" 2>&1
             INSTALL_STATUS=$?
         fi
         unset ROOT_PASS
@@ -376,6 +461,10 @@ fi
 # Copie des fichiers FreeSmartSync
 # ─────────────────────────────────────────────
 
+# Barre de progression synchrone — se ferme proprement à la fin
+open_progress "$APP_NAME — Installation" "Installation de FreeSmartSync en cours..."
+step_progress 10 "Préparation..."
+
 # Copie des fichiers
 mkdir -p "$INSTALL_DIR"
 
@@ -386,6 +475,7 @@ else
     SOURCE_DIR="$SCRIPT_DIR"
 fi
 
+step_progress 30 "Copie des fichiers..."
 # Copie avec rsync si disponible, sinon cp puis nettoyage
 if command -v rsync &>/dev/null; then
     rsync -a --exclude="*.sh" --exclude="*.desktop" "$SOURCE_DIR/" "$INSTALL_DIR/"
@@ -395,6 +485,7 @@ else
     rm -f "$INSTALL_DIR/"*.sh "$INSTALL_DIR/Double-clic"*.desktop 2>/dev/null || true
 fi
 
+step_progress 60 "Configuration..."
 chmod +x "$INSTALL_DIR/freesmartsync.py"
 
 # Icône PNG déjà incluse dans le zip
@@ -455,37 +546,36 @@ fi
 # Mise à jour base applications
 update-desktop-database "$HOME/.local/share/applications/" 2>/dev/null || true
 
-close_progress "$PROG"
+step_progress 90 "Finalisation..."
+close_progress
 
 # ─────────────────────────────────────────────
 # Popup de succès + lancement optionnel
 # ─────────────────────────────────────────────
 
 popup_question \
-"✅ FreeSmartSync est installé !
+"✅ FreeSmartSync est installé avec succès !
 
-Vous pouvez maintenant le lancer depuis :
-  • Votre menu d'applications
-  • Ou en cherchant 'FreeSmartSync'
+Lancer FreeSmartSync maintenant ?
 
-Lancer FreeSmartSync maintenant ?" \
+⚠️ Si le logiciel ne démarre pas automatiquement,
+cliquez sur son icône dans le menu d'applications
+ou sur le Bureau." \
 "$APP_NAME — Installation réussie !"
 
 if [ $? -eq 0 ]; then
-    # Mise à jour de la base d'applications
-    update-desktop-database "$HOME/.local/share/applications/" 2>/dev/null || true
-    sleep 1
-
-    # Délai pour laisser le bureau se stabiliser
-    sleep 2
-
-    # Lancement multi-méthodes pour compatibilité GNOME/KDE/Cinnamon
     export DISPLAY="${DISPLAY:-:0}"
     export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
-
-    if command -v python3 &>/dev/null; then
-        # python3 direct — le plus fiable sur toutes les distros
-        setsid python3 "$INSTALL_DIR/freesmartsync.py" >/dev/null 2>&1 &
+    # Méthode 1 : gtk-launch via le .desktop installé (meilleure intégration GNOME/Cinnamon)
+    if command -v gtk-launch &>/dev/null && [ -f "$HOME/.local/share/applications/freesmartsync.desktop" ]; then
+        gtk-launch freesmartsync 2>/dev/null &
+    # Méthode 2 : setsid + nohup (détachement complet du groupe de processus)
+    elif command -v setsid &>/dev/null; then
+        cd "$INSTALL_DIR" && setsid nohup python3 freesmartsync.py >/dev/null 2>&1 &
+        disown $!
+    # Méthode 3 : nohup seul (fallback universel)
+    else
+        cd "$INSTALL_DIR" && nohup python3 freesmartsync.py >/dev/null 2>&1 &
         disown $!
     fi
 fi

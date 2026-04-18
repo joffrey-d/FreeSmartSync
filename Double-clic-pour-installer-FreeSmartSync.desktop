@@ -2,10 +2,13 @@
 Version=1.0
 Type=Application
 Name=Installer FreeSmartSync
+Name[fr]=Installer FreeSmartSync
 GenericName=Installation FreeSmartSync
-Comment=Double-clic pour installer - Right-click Run as program if needed
-Exec=bash "%k/../CLIC-DROIT-Executer-pour-installer-FreeSmartSync.sh"
+Comment=Installe FreeSmartSync sur votre ordinateur
+Comment[fr]=Installe FreeSmartSync sur votre ordinateur
+Exec=bash -c 'bash "$(dirname "$(realpath "%k")")/CLIC-DROIT-Executer-pour-installer-FreeSmartSync.sh"'
 Icon=system-software-install
 Terminal=false
 Categories=System;
 StartupNotify=false
+X-KDE-RunOnDiscreteGpu=false

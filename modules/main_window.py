@@ -30,7 +30,7 @@ def _set_app_icon(widget):
     if os.path.exists(icon_path):
         widget.setWindowIcon(QtGui.QIcon(icon_path))
 
-APP_VERSION = "v0.8.7.6"
+APP_VERSION = "v0.8.8.3"
 
 
 class AboutDialog(QtWidgets.QDialog):

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Installer FreeSmartSync (Fedora/KDE)
+Name[fr]=Installer FreeSmartSync (Fedora/KDE)
+Comment=Lance l'installation de FreeSmartSync dans un terminal
+Comment[fr]=Lance l'installation de FreeSmartSync dans un terminal
+Exec=bash -c 'DIR="$(dirname \"$(realpath \"%k\")\")" ; SCRIPT="$DIR/CLIC-DROIT-Executer-pour-installer-FreeSmartSync.sh" ; if command -v konsole >/dev/null 2>&1; then konsole --noclose -e bash "$SCRIPT"; elif command -v gnome-terminal >/dev/null 2>&1; then gnome-terminal -- bash -c "bash \"$SCRIPT\"; read -p \"Appuyez sur Entrée...\""; elif command -v xterm >/dev/null 2>&1; then xterm -hold -e bash "$SCRIPT"; else bash "$SCRIPT"; fi'
+Icon=system-software-install
+Terminal=false
+Categories=System;
+StartupNotify=false

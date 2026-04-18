@@ -322,8 +322,77 @@ footer a:hover{text-decoration:underline}
         <div class="sn">1</div>
         <div class="sc2">
           <h3>Téléchargez et installez</h3>
-          <p>Téléchargez le zip Linux. Faites un clic droit sur <code>CLIC-DROIT-Executer-pour-installer-FreeSmartSync.sh</code> et choisissez <strong>Exécuter comme programme</strong> — ou lancez-le depuis un terminal.</p>
-          <div class="note">💡 Le script installe automatiquement Python, PyQt5 et ADB pour votre distribution.</div>
+          <p>Téléchargez le zip, extrayez-le. Il contient un seul fichier à lancer :</p>
+          <p style="margin:.5rem 0;font-family:'JetBrains Mono',monospace;background:var(--bg3);
+            padding:8px 12px;border-radius:8px;font-size:.85rem">
+            CLIC-DROIT-Executer-pour-installer-FreeSmartSync.sh
+          </p>
+
+          <!-- Sous-étape A : rendre exécutable -->
+          <div class="note" style="background:#e8f5e9;border-color:#a5d6a7;color:#2e7d32;margin-bottom:1rem">
+            ✅ <strong>Le script est généralement déjà exécutable</strong> — les captures ci-dessous
+            montrent comment vérifier ou activer ce droit si nécessaire.
+          </div>
+
+          <!-- Guide Zorin / Ubuntu / GNOME -->
+          <div style="margin-bottom:1.5rem">
+            <p style="font-weight:600;margin-bottom:.3rem;font-size:.95rem">🐧 Sur Zorin OS / Ubuntu / GNOME :</p>
+            <p style="font-size:.82rem;color:var(--muted2);margin-bottom:.8rem">
+              Le script est déjà exécutable. En cas de doute, voici comment vérifier :
+            </p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.8rem">
+              <div>
+                <img src="img/install-guide/clic-droit-zorin.png"
+                  style="width:100%;display:block;border:2px solid #16a34a;border-radius:8px" alt="Clic droit Zorin">
+                <p style="font-size:.8rem;color:var(--muted2);margin-top:.4rem;text-align:center">
+                  ① Clic droit sur le fichier .sh → <strong>"Exécuter comme un programme"</strong>
+                  (lancement direct) ou <strong>"Propriétés"</strong> pour vérifier les droits
+                </p>
+              </div>
+              <div>
+                <img src="img/install-guide/droits-zorin.png"
+                  style="width:100%;display:block;border:2px solid #16a34a;border-radius:8px" alt="Droits Zorin">
+                <p style="font-size:.8rem;color:var(--muted2);margin-top:.4rem;text-align:center">
+                  ② Dans Propriétés → le toggle <strong>"Exécutable comme programme"</strong>
+                  doit être activé (bleu)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Guide Linux Mint / Cinnamon -->
+          <div style="margin-bottom:1.5rem">
+            <p style="font-weight:600;margin-bottom:.3rem;font-size:.95rem">🐧 Sur Linux Mint / Cinnamon :</p>
+            <p style="font-size:.82rem;color:var(--muted2);margin-bottom:.8rem">
+              Le script est déjà exécutable. Double-clic pour lancer directement :
+            </p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.8rem">
+              <div>
+                <img src="img/install-guide/double-click-LM.png"
+                  style="width:100%;display:block;border:2px solid #16a34a;border-radius:8px" alt="Double-clic LM">
+                <p style="font-size:.8rem;color:var(--muted2);margin-top:.4rem;text-align:center">
+                  ① Double-clic sur le fichier → cliquer <strong>"Lancer"</strong>
+                  dans la fenêtre qui apparaît
+                </p>
+              </div>
+              <div>
+                <img src="img/install-guide/droits-LM.png"
+                  style="width:100%;display:block;border:2px solid #16a34a;border-radius:8px" alt="Droits LM">
+                <p style="font-size:.8rem;color:var(--muted2);margin-top:.4rem;text-align:center">
+                  ② Si besoin → clic droit → Propriétés → onglet <strong>Permissions</strong>
+                  → cocher <strong>"Autoriser l'exécution"</strong>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Terminal -->
+          <div class="note" style="margin-bottom:.7rem">
+            💻 <strong>Alternative universelle (terminal) :</strong><br>
+            <code>chmod +x CLIC-DROIT-Executer-pour-installer-FreeSmartSync.sh</code><br>
+            <code>bash CLIC-DROIT-Executer-pour-installer-FreeSmartSync.sh</code>
+          </div>
+          <div class="note">💡 Le script installe automatiquement Python, PyQt5 et ADB selon votre distribution. Une barre de progression s'affiche pendant l'installation.</div>
         </div>
       </div>
 
@@ -412,7 +481,7 @@ footer a:hover{text-decoration:underline}
           <h3 style="margin-top:.5rem">Linux — Version stable</h3>
           <div class="dv">v0.8.6.9 · Branche main</div>
         </div>
-        <p>Recommandée et testée sur Ubuntu, Fedora, Mint, Zorin OS. Pour Arch, Manjaro, Mageia, openSUSE et GLF-OS, des manipulations manuelles via terminal peuvent être nécessaires.</p>
+        <p>Recommandée et testée sur Ubuntu, Fedora, Mint, Zorin OS. ⚠️ Après extraction du zip, rendre le script exécutable (<code>chmod +x</code>) avant installation. Pour Arch, Mageia, openSUSE et GLF-OS, lancer via terminal.</p>
         <a href="https://github.com/joffrey-d/FreeSmartSync/archive/refs/heads/main.zip"
            class="btn btn-p" target="_blank">↓ Télécharger pour Linux</a>
         <a href="https://github.com/joffrey-d/FreeSmartSync" class="btn btn-s"
@@ -425,7 +494,7 @@ footer a:hover{text-decoration:underline}
         <div>
           <span class="tag tag-dev">⚙️ Développement</span>
           <h3 style="margin-top:.5rem">Linux — Branche develop</h3>
-          <div class="dv">v0.8.7.6 · Branche develop</div>
+          <div class="dv">v0.8.8.3 · Branche develop</div>
         </div>
         <p>Dernières fonctionnalités en cours de développement. Peut contenir des bugs mineurs. Idéale pour les testeurs et les retours.</p>
         <a href="https://github.com/joffrey-d/FreeSmartSync/archive/refs/heads/development.zip"

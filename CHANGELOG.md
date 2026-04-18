@@ -2,7 +2,113 @@
 
 ---
 
-## v0.8.7.6 — Actuelle
+## v0.8.8.3 — Actuelle
+**Barre de progression Fedora/Mageia · GLF-OS PyQt5 · Menu Mageia**
+
+Diagnostic précis grâce aux tests terrain :
+
+- **Barre de progression kdialog (Fedora/Mageia KDE)** : kdialog utilise DBus,
+  pas stdin — le FIFO était ignoré, d'où la fenêtre bloquée. Logique maintenant
+  séparée : kdialog = lancé en arrière-plan + `kill $PID` à la fin ;
+  zenity = FIFO stdin + `100` + `--auto-close` (inchangé, LM parfait)
+- **GLF-OS PyQt5** : tentatives sur plusieurs attributs Nix
+  (`python3Packages.pyqt5`, `python39Packages.pyqt5`, `python310Packages.pyqt5`,
+  `python311Packages.pyqt5`) — le nom varie selon la version du channel
+- **Menu réinstall/désinstall Mageia** : détection élargie avec vérification
+  supplémentaire du `.desktop` dans `applications/`
+- **Version stable `main`** : reste v0.8.6.9 (validée sur toutes distributions)
+
+---
+
+## v0.8.8.2
+**Barre de progression · GLF-OS · Désinstallation**
+
+- **Barre de progression** (Fedora/Mageia) : remplacement du `--pulsate` (infini)
+  par un pipe nommé (FIFO). Le script envoie `10→30→60→90→100` via un descripteur
+  dédié. À `100`, zenity/kdialog se ferment via `--auto-close`. Fermeture garantie.
+- **GLF-OS** : commande corrigée `nix-env -i android-tools python3 python3Packages.pyqt5`
+  (sans préfixe `nixpkgs.` — channel auto-détecté par nix-env)
+- **Désinstallation** : message unifié et clair, avec affichage du chemin de sauvegarde
+  configuré, rappel qu'ADB n'est pas supprimé (partagé avec d'autres logiciels)
+- **Site** : guide d'installation revu — captures sans annotations mal positionnées,
+  texte descriptif sous chaque image, suppression du mot "obligatoire" (les droits
+  sont déjà corrects dans le zip)
+
+---
+
+## v0.8.8.1
+**Barre de progression · Lancement blindé · Site avec captures**
+
+- **Barre de progression** (Fedora/Mageia) : ajout de `pkill -f "zenity --progress"`
+  et `pkill -f "kdialog --progressbar"` dans `close_progress()` — force la fermeture
+  même si le PID a changé entre la création et la clôture
+- **Lancement post-install** — 3 méthodes en cascade :
+  1. `gtk-launch freesmartsync` si disponible et .desktop installé (meilleure intégration GNOME)
+  2. `setsid nohup python3` (détachement complet, fix Zorin/GNOME)
+  3. `nohup python3` (fallback universel)
+- **Message d'avertissement** dans la popup finale : si le lancement auto échoue,
+  l'utilisateur est informé de cliquer sur l'icône dans le menu
+- **Site** : guide d'installation illustré avec captures d'écran annotées (flèches rouges)
+  pour Zorin OS et Linux Mint
+
+---
+
+## v0.8.8.0
+**Compatibilité GLF-OS · Barre de progression · Lancement Zorin**
+
+Corrections basées sur les tests terrain (Fedora, Mageia, Zorin, LM, GLF-OS) :
+
+- **GLF-OS** : `#!/bin/bash` remplacé par `#!/usr/bin/env bash` — le shell est
+  trouvé là où il est réellement installé sur la distribution
+- **Barre de progression** (Fedora/Mageia) : remplacement des `sleep` fixes par
+  `--pulsate` (animation continue) + fermeture propre via `kill $PID`.
+  Plus de barre figée ou vide : elle s'anime dès le début et se ferme exactement
+  à la fin de l'installation
+- **Lancement post-install** (Zorin/GNOME) : `setsid nohup python3` — `setsid`
+  crée un nouveau groupe de processus totalement détaché du script parent.
+  GNOME ne peut plus tuer FreeSmartSync quand le script se termine
+- **Permissions** : `chmod +x freesmartsync.py` aussi dans le répertoire source
+
+---
+
+## v0.8.7.9
+**Installation — simplification et fiabilité**
+- **Suppression du fichier `.desktop`** installeur : source de problèmes sur toutes les
+  distributions (KDE, GNOME, Nautilus, Nemo — chacun l'interprète différemment).
+  Un seul fichier à lancer : `CLIC-DROIT-Executer-pour-installer-FreeSmartSync.sh`
+- **Barre de progression** désormais visible dès le début de la copie des fichiers
+  (évite l'impression de plantage signalée sur Mageia)
+- **Lancement post-install** : `cd "$INSTALL_DIR" && python3 freesmartsync.py`
+  — le changement de répertoire évite les erreurs d'imports relatifs sur Zorin/Mint
+- Nettoyage des `sleep` et `update-desktop-database` en double dans le script
+
+---
+
+## v0.8.7.8
+**Lanceur .desktop et lancement post-install**
+- **Fichier .desktop** : `readlink -f "$0"` (bugué — retournait le chemin de bash)
+  remplacé par `%k | sed 's|file://||'` — standard universel KDE et GNOME
+- **Terminal=true** dans le .desktop : permet de voir les erreurs au double-clic
+  au lieu d'un écran noir silencieux
+- **Lancement post-install** : simplifié en `nohup python3` direct (plus fiable
+  que `gtk-launch` dont le cache peut ne pas être à jour immédiatement)
+
+---
+
+## v0.8.7.7
+**Corrections Mageia · Lancement universel · Permissions**
+- **Mageia** : nom du paquet corrigé `python3-pyqt5` → `python3-qt5`
+- **Script** : auto `chmod +x` au démarrage (perms parfois perdues à l'extraction du zip)
+- **Lancement post-install** : utilise `gtk-launch freesmartsync` si disponible,
+  sinon `nohup python3` — plus fiable que `setsid` sur tous les DE
+- **Fichier .desktop installeur** : suppression de `%k` (variable KDE uniquement),
+  remplacé par `readlink -f "$0"` universel
+- **README.md** : section ⚠️ obligatoire sur `chmod +x` avant installation,
+  tableau des distributions avec notes par distro
+
+---
+
+## v0.8.7.6
 **Script d'installation — corrections mineures**
 - Suppression de la popup intermédiaire avant pkexec (inutile, pkexec ouvre sa propre fenêtre)
 - Fallback `cp -r` : nettoyage des .sh et .desktop dans le répertoire d'installation
